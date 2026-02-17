@@ -175,28 +175,7 @@ class CartScreen extends StatelessWidget {
                 topLeft: Radius.circular(ScreenSize.tileBorderRadius),
                 bottomLeft: Radius.circular(ScreenSize.tileBorderRadius),
               ),
-              child: CachedNetworkImage(
-                imageUrl: item['image'] ?? '',
-                width: 90,
-                height: 90,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  width: 90,
-                  height: 90,
-                  color: AppColors.backgroundGrey,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  width: 90,
-                  height: 90,
-                  color: AppColors.backgroundGrey,
-                  child: Icon(
-                    Icons.image_not_supported,
-                    size: ScreenSize.iconMedium,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ),
+              child: _cartItemImage(item['image'], 90),
             ),
           ),
           
@@ -383,7 +362,27 @@ class CartScreen extends StatelessWidget {
       ),
     );
   }
-  
+
+  Widget _cartItemImage(dynamic image, double size) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_not_supported, size: ScreenSize.iconMedium, color: AppColors.textTertiary),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+      errorWidget: (context, u, e) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, size: ScreenSize.iconMedium, color: AppColors.textTertiary)),
+    );
+  }
+
   Widget _buildBottomBar(CartController controller) {
     return Container(
       padding: EdgeInsets.all(ScreenSize.spacingMedium),

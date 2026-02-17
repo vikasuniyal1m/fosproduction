@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/product_controller.dart';
+import '../../controllers/profile_controller.dart';
+import '../../routes/app_routes.dart';
 import '../../widgets/loading_widget.dart';
+import 'digital_preview_player_screen.dart';
 
 /// Product Details Screen
 /// Shows product details, images, reviews, and related products
@@ -16,7 +22,30 @@ class ProductDetailsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     ScreenSize.init(context);
     final controller = Get.put(ProductController());
-    
+    // Har baar screen open (e.g. home se naya product) par sahi product load karo – controller reuse hone par onInit dubara nahi chalta
+    final productIdArg = Get.arguments;
+    int? productId;
+    if (productIdArg is int) {
+      productId = productIdArg;
+    } else if (productIdArg is String) {
+      productId = int.tryParse(productIdArg);
+    } else if (productIdArg != null) {
+      productId = int.tryParse(productIdArg.toString());
+    }
+    // Home se naya product kholne par controller reuse hota hai – isliye alag productId pe dobara load karo
+    if (productId != null && productId > 0 && controller.product != null && controller.product!['id'] != productId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => controller.loadProductDetails(productId!));
+    }
+    // Digital: payment ke baad agar yahi page dikhe to has_purchased refresh karo taaki "You own this" dikhe, "Pay & Download" nahi
+    if (productId != null && controller.product != null && _isDigitalProduct(controller)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (controller.product != null && (controller.product!['id'] == productId)) {
+            controller.refreshDigitalPurchaseStatus();
+          }
+        });
+      });
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -41,6 +70,12 @@ class ProductDetailsScreen extends StatelessWidget {
                         _buildProductBadges(controller),
                         SizedBox(height: ScreenSize.spacingSmall),
                         
+                        // Digital product: list music, preview 5–10 sec, pay for lifetime download
+                        if (_isDigitalProduct(controller)) ...[
+                          _buildDigitalProductSection(controller),
+                          SizedBox(height: ScreenSize.spacingSmall),
+                        ],
+
                         // Size Selection
                         if (controller.product!['sizes'] != null && (controller.product!['sizes'] as List).isNotEmpty)
                           _buildSizeSelection(controller),
@@ -49,13 +84,15 @@ class ProductDetailsScreen extends StatelessWidget {
                         if (controller.product!['colors'] != null && (controller.product!['colors'] as List).isNotEmpty)
                           _buildColorSelection(controller),
                         
-                        // Quantity & Price Row
+                        // Quantity & Price Row (no quantity for digital – always 1)
                         _buildQuantityAndPrice(controller),
                         SizedBox(height: ScreenSize.spacingSmall),
                         
-                        // Shipping & Return Info
-                        _buildShippingInfo(controller),
-                        SizedBox(height: ScreenSize.spacingSmall),
+                        // Shipping & Return Info (only for physical products)
+                        if (!_isDigitalProduct(controller)) ...[
+                          _buildShippingInfo(controller),
+                          SizedBox(height: ScreenSize.spacingSmall),
+                        ],
                         
                         // Description
                         _buildDescription(controller),
@@ -78,7 +115,7 @@ class ProductDetailsScreen extends StatelessWidget {
                 ],
               )),
       ),
-      bottomNavigationBar: _buildBottomBar(controller),
+      bottomNavigationBar: Obx(() => _buildBottomBar(controller)),
     );
   }
   
@@ -89,113 +126,136 @@ class ProductDetailsScreen extends StatelessWidget {
       floating: false,
       automaticallyImplyLeading: true,
       flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          children: [
-            Builder(
-              builder: (context) {
-                final images = controller.product!['images'] as List? ?? [];
-                final imageCount = images.isEmpty ? 1 : images.length;
-                
-                return PageView.builder(
-                  itemCount: imageCount,
-                  onPageChanged: (index) => controller.selectedImageIndex.value = index,
-                  itemBuilder: (context, index) {
-                    final imageUrl = images.isNotEmpty 
-                        ? (images[index] is String ? images[index] : images[index]?.toString() ?? '')
-                        : controller.product!['image']?.toString() ?? '';
-                    
-                    return Container(
-                      color: Colors.white,
-                      child: CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        fit: BoxFit.contain,
-                        width: double.infinity,
-                        height: double.infinity,
-                        placeholder: (context, url) => Container(
-                          color: Colors.white,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: Colors.white,
-                          child: Icon(
-                            Icons.image_not_supported,
-                            size: ScreenSize.iconExtraLarge,
-                            color: AppColors.textTertiary,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-            // Image indicators
-            Positioned(
-              bottom: ScreenSize.spacingSmall,
-              left: 0,
-              right: 0,
-              child: Builder(
-                builder: (context) {
-                  final images = controller.product!['images'] as List? ?? [];
-                  final imageCount = images.isEmpty ? 1 : images.length;
-                  if (imageCount <= 1) return const SizedBox.shrink();
-                  
-                  return Obx(() {
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(imageCount, (index) {
-                        final isSelected = controller.selectedImageIndex.value == index;
-                        return Container(
-                          margin: EdgeInsets.symmetric(horizontal: ScreenSize.spacingTiny),
-                          width: isSelected ? 20 : 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: isSelected 
-                                ? AppColors.textWhite 
-                                : AppColors.textWhite.withOpacity(0.5),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        );
-                      }),
-                    );
-                  });
-                },
-              ),
-            ),
-          ],
-        ),
+        background: Obx(() {
+          // Read observables so Obx can subscribe (required for non-digital branch)
+          final previewUrl = controller.digitalPreviewUrl.value;
+          final mediaType = controller.digitalPreviewMediaType.value;
+          final isDigitalVideo = _isDigitalProduct(controller) &&
+              mediaType == 'video' &&
+              previewUrl.isNotEmpty;
+          final durationSeconds = controller.digitalPreviewDurationSeconds.value;
+          return isDigitalVideo
+              ? _DigitalVideoTopArea(
+                  previewUrl: previewUrl,
+                  durationSeconds: durationSeconds,
+                  onPayPressed: () => controller.goToPayDigitalProduct(),
+                )
+            : Stack(
+                children: [
+                  Builder(
+                    builder: (context) {
+                      final images = controller.product!['images'] as List? ?? [];
+                      final imageCount = images.isEmpty ? 1 : images.length;
+                      return PageView.builder(
+                        itemCount: imageCount,
+                        onPageChanged: (index) => controller.selectedImageIndex.value = index,
+                        itemBuilder: (context, index) {
+                          final imageUrl = images.isNotEmpty
+                              ? (images[index] is String ? images[index] : images[index]?.toString() ?? '')
+                              : controller.product!['image']?.toString() ?? '';
+                          final url = imageUrl.toString().trim();
+                          return Container(
+                            color: Colors.white,
+                            child: url.isEmpty
+                                ? Center(
+                                    child: Icon(
+                                      Icons.image_not_supported,
+                                      size: ScreenSize.iconExtraLarge,
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  )
+                                : CachedNetworkImage(
+                                    imageUrl: url,
+                                    fit: BoxFit.contain,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    placeholder: (context, u) => Container(
+                                      color: Colors.white,
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                        ),
+                                      ),
+                                    ),
+                                    errorWidget: (context, u, error) => Container(
+                                      color: Colors.white,
+                                      child: Icon(
+                                        Icons.image_not_supported,
+                                        size: ScreenSize.iconExtraLarge,
+                                        color: AppColors.textTertiary,
+                                      ),
+                                    ),
+                                  ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  Positioned(
+                    bottom: ScreenSize.spacingSmall,
+                    left: 0,
+                    right: 0,
+                    child: Builder(
+                      builder: (context) {
+                        final images = controller.product!['images'] as List? ?? [];
+                        final imageCount = images.isEmpty ? 1 : images.length;
+                        if (imageCount <= 1) return const SizedBox.shrink();
+                        return Obx(() {
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(imageCount, (index) {
+                              final isSelected = controller.selectedImageIndex.value == index;
+                              return Container(
+                                margin: EdgeInsets.symmetric(horizontal: ScreenSize.spacingTiny),
+                                width: isSelected ? 20 : 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.textWhite
+                                      : AppColors.textWhite.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              );
+                            }),
+                          );
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              );
+        }),
       ),
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: AppColors.textWhite),
         onPressed: () => Get.back(),
       ),
       actions: [
-        Obx(() => AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          transitionBuilder: (child, animation) {
-            return ScaleTransition(
-              scale: animation,
-              child: child,
-            );
-          },
-          child: IconButton(
-            key: ValueKey(controller.isFavorite.value),
-            icon: Icon(
-              controller.isFavorite.value ? Icons.favorite : Icons.favorite_border,
-              color: controller.isFavorite.value ? AppColors.error : AppColors.textWhite,
+        // Favourite – only for physical products
+        if (!_isDigitalProduct(controller))
+          Obx(() => AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            transitionBuilder: (child, animation) {
+              return ScaleTransition(
+                scale: animation,
+                child: child,
+              );
+            },
+            child: IconButton(
+              key: ValueKey(controller.isFavorite.value),
+              icon: Icon(
+                controller.isFavorite.value ? Icons.favorite : Icons.favorite_border,
+                color: controller.isFavorite.value ? AppColors.error : AppColors.textWhite,
+              ),
+              onPressed: controller.toggleFavorite,
             ),
-            onPressed: controller.toggleFavorite,
+          )),
+        if (!_isDigitalProduct(controller))
+          IconButton(
+            icon: const Icon(Icons.share, color: AppColors.textWhite),
+            onPressed: () => _shareProduct(controller),
           ),
-        )),
-        IconButton(
-          icon: const Icon(Icons.share, color: AppColors.textWhite),
-          onPressed: () => _shareProduct(controller),
-        ),
       ],
     );
   }
@@ -285,6 +345,259 @@ class ProductDetailsScreen extends StatelessWidget {
     );
   }
   
+  /// Digital product: list music, preview 5–10 sec, pay with Stripe for lifetime MP3/MP4 download.
+  Widget _buildDigitalProductSection(ProductController controller) {
+    return Obx(() {
+      final hasPurchased = controller.digitalHasPurchased.value;
+      final previewUrl = controller.digitalPreviewUrl.value;
+      final previewSec = controller.digitalPreviewDurationSeconds.value;
+      final previewLoading = controller.digitalPreviewLoading.value;
+      final productName = controller.product!['name'] ?? '';
+
+      return Container(
+        margin: EdgeInsets.symmetric(horizontal: ScreenSize.spacingMedium),
+        padding: EdgeInsets.all(ScreenSize.spacingMedium),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.music_video_rounded, size: 20, color: AppColors.primary),
+                SizedBox(width: 8),
+                Text(
+                  'Music & Video',
+                  style: TextStyle(
+                    fontSize: ScreenSize.textMedium,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: ScreenSize.spacingSmall),
+            // List this product as the one track
+            Text(
+              productName,
+              style: TextStyle(
+                fontSize: ScreenSize.textSmall,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: ScreenSize.spacingSmall),
+            if (previewLoading)
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                  ),
+                ),
+              )
+            else if (previewUrl.isNotEmpty && !hasPurchased) ...[
+              Text(
+                'Preview ($previewSec sec) – then pay to unlock & download',
+                style: TextStyle(
+                  fontSize: ScreenSize.textExtraSmall,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              SizedBox(height: 4),
+              OutlinedButton.icon(
+                onPressed: () => _openInAppPreview(controller),
+                icon: Icon(Icons.play_circle_outline, size: 18, color: AppColors.primary),
+                label: Text(
+                  'Watch video / listen to music',
+                  style: TextStyle(fontSize: ScreenSize.textExtraSmall, color: AppColors.primary),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+            SizedBox(height: ScreenSize.spacingSmall),
+            if (hasPurchased) ...[
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.success.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, size: 18, color: AppColors.success),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'You own this – lifetime access',
+                        style: TextStyle(
+                          fontSize: ScreenSize.textExtraSmall,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 8),
+              // Download directly from product details (same as My Orders)
+              if (controller.digitalOrderItemId.value != null)
+                Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: () => _downloadDigitalFromProductDetails(controller),
+                    icon: Icon(Icons.download, size: 18, color: Colors.white),
+                    label: Text(
+                      'Download MP3 / MP4',
+                      style: TextStyle(fontSize: ScreenSize.textExtraSmall, color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor: AppColors.primary,
+                    ),
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: () => AppRoutes.toOrders(),
+                icon: Icon(Icons.list_alt, size: 18, color: AppColors.primary),
+                label: Text(
+                  'Open in My Orders',
+                  style: TextStyle(fontSize: ScreenSize.textExtraSmall, color: AppColors.primary),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ] else ...[
+              Text(
+                'Pay once with Stripe – get lifetime access to download both MP3 and MP4.',
+                style: TextStyle(
+                  fontSize: ScreenSize.textExtraSmall,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () => controller.goToPayDigitalProduct(),
+                icon: Icon(Icons.payment, size: 18, color: Colors.white),
+                label: Text(
+                  'Pay with Stripe – unlock download',
+                  style: TextStyle(fontSize: ScreenSize.textSmall, color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+
+  /// User-friendly location from full path (e.g. DigitalDownloads/Filename.mp4).
+  static String _downloadLocationMessage(String savePath) {
+    const folder = 'DigitalDownloads';
+    final idx = savePath.indexOf(folder);
+    if (idx >= 0 && idx + folder.length <= savePath.length) {
+      final after = savePath.substring(idx);
+      return after.replaceAll(r'\', '/');
+    }
+    final segments = savePath.replaceAll(r'\', '/').split('/');
+    if (segments.length >= 2) {
+      return '${segments[segments.length - 2]}/${segments.last}';
+    }
+    return segments.isNotEmpty ? segments.last : savePath;
+  }
+
+  /// Download digital product to device from product details (same flow as My Orders).
+  Future<void> _downloadDigitalFromProductDetails(ProductController controller) async {
+    final orderItemId = controller.digitalOrderItemId.value;
+    if (orderItemId == null) {
+      Get.snackbar('Error', 'Download not available. Try from My Orders.', snackPosition: SnackPosition.BOTTOM);
+      return;
+    }
+    final productName = controller.product?['name']?.toString() ?? 'Digital product';
+    final profileController = Get.put(ProfileController());
+    try {
+      final savePath = await profileController.downloadDigitalProductToDevice(orderItemId, productName);
+      if (savePath != null && savePath.isNotEmpty) {
+        final location = _downloadLocationMessage(savePath);
+        Get.snackbar(
+          'Download complete',
+          'Saved at: $location\nLifetime access – open from app storage anytime.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: AppColors.success,
+          colorText: AppColors.textWhite,
+          duration: const Duration(seconds: 5),
+          margin: const EdgeInsets.all(12),
+        );
+      }
+    } catch (e) {
+      debugPrint('[ProductDetails] Download to device failed: $e');
+      final url = await profileController.getDigitalDownloadUrl(orderItemId);
+      if (url != null && url.isNotEmpty) {
+        try {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            Get.snackbar('Opened in browser', 'You can download from there.', snackPosition: SnackPosition.BOTTOM);
+          }
+        } catch (_) {
+          Get.snackbar('Error', 'Failed to download: $e');
+        }
+      } else {
+        Get.snackbar('Error', 'Failed to download: $e');
+      }
+    }
+  }
+
+  /// Open in-app preview: for video show product photo + 10 sec timer; for audio play clip. Then pay & download popup.
+  void _openInAppPreview(ProductController controller) {
+    final url = controller.digitalPreviewUrl.value;
+    if (url.isEmpty) {
+      Get.snackbar('Error', 'Preview not available');
+      return;
+    }
+    String? productImageUrl;
+    final images = controller.product?['images'] as List?;
+    if (images != null && images.isNotEmpty) {
+      productImageUrl = images[0] is String ? images[0] as String : images[0]?.toString();
+    }
+    if (productImageUrl == null || productImageUrl.isEmpty) {
+      productImageUrl = controller.product?['image']?.toString();
+    }
+    Get.to(
+      () => DigitalPreviewPlayerScreen(
+        previewUrl: url,
+        mediaType: controller.digitalPreviewMediaType.value,
+        durationSeconds: controller.digitalPreviewDurationSeconds.value,
+        onPayPressed: () => controller.goToPayDigitalProduct(),
+        productName: controller.product?['name']?.toString(),
+        productImageUrl: productImageUrl,
+      ),
+    );
+  }
+
   Widget _buildSizeSelection(ProductController controller) {
     final sizes = controller.product!['sizes'] as List? ?? [];
     if (sizes.isEmpty) return const SizedBox.shrink();
@@ -395,7 +708,8 @@ class ProductDetailsScreen extends StatelessWidget {
   
   Widget _buildQuantityAndPrice(ProductController controller) {
     final product = controller.product!;
-    final hasDiscount = product['originalPrice'] != null && 
+    final isDigital = product['is_digital'] == true || product['is_digital'] == 1;
+    final hasDiscount = product['originalPrice'] != null &&
                        product['originalPrice'] > product['price'];
     final discountPercent = hasDiscount 
         ? ((product['originalPrice'] - product['price']) / product['originalPrice'] * 100).round()
@@ -405,56 +719,56 @@ class ProductDetailsScreen extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: ScreenSize.spacingMedium, vertical: ScreenSize.spacingTiny),
       child: Row(
         children: [
-          // Quantity Section
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Quantity',
-                style: TextStyle(
-                  fontSize: ScreenSize.textExtraSmall,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+          // Quantity Section (only for physical products; digital = 1, no selector)
+          if (!isDigital)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Quantity',
+                  style: TextStyle(
+                    fontSize: ScreenSize.textExtraSmall,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-              ),
-              SizedBox(height: 2),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundGrey,
-                  borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.remove, size: 14),
-                      onPressed: controller.decreaseQuantity,
-                      padding: EdgeInsets.all(4),
-                      constraints: BoxConstraints(),
-                    ),
-                    Obx(() => Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        '${controller.quantity.value}',
-                        style: TextStyle(
-                          fontSize: ScreenSize.textSmall,
-                          fontWeight: FontWeight.w600,
-                        ),
+                SizedBox(height: 2),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundGrey,
+                    borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove, size: 14),
+                        onPressed: controller.decreaseQuantity,
+                        padding: EdgeInsets.all(4),
+                        constraints: BoxConstraints(),
                       ),
-                    )),
-                    IconButton(
-                      icon: Icon(Icons.add, size: 14),
-                      onPressed: controller.increaseQuantity,
-                      padding: EdgeInsets.all(4),
-                      constraints: BoxConstraints(),
-                    ),
-                  ],
+                      Obx(() => Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          '${controller.quantity.value}',
+                          style: TextStyle(
+                            fontSize: ScreenSize.textSmall,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )),
+                      IconButton(
+                        icon: Icon(Icons.add, size: 14),
+                        onPressed: controller.increaseQuantity,
+                        padding: EdgeInsets.all(4),
+                        constraints: BoxConstraints(),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          
-          SizedBox(width: ScreenSize.spacingMedium),
+              ],
+            ),
+          if (!isDigital) SizedBox(width: ScreenSize.spacingMedium),
           
           // Price Section
           Expanded(
@@ -518,11 +832,35 @@ class ProductDetailsScreen extends StatelessWidget {
     final product = controller.product!;
     final inStock = product['inStock'] ?? true;
     final stock = product['stock'] ?? 0;
-    
+    final isDigital = product['is_digital'] == true || product['is_digital'] == 1;
+
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: ScreenSize.spacingMedium, vertical: 2),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
         children: [
+          // Digital product badge
+          if (isDigital)
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withOpacity(0.4), width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.download, size: 12, color: AppColors.primary),
+                  SizedBox(width: 4),
+                  Text(
+                    'Digital – download after payment',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary),
+                  ),
+                ],
+              ),
+            ),
           // Stock Status
           Container(
             padding: EdgeInsets.symmetric(
@@ -559,9 +897,7 @@ class ProductDetailsScreen extends StatelessWidget {
               ],
             ),
           ),
-          
-          SizedBox(width: 8),
-          
+
           // Brand Badge (if available)
           if (product['brand'] != null)
             Container(
@@ -1009,6 +1345,7 @@ class ProductDetailsScreen extends StatelessWidget {
               spacing: 4,
               runSpacing: 4,
               children: (review['images'] as List).map((image) {
+                final imgUrl = image?.toString().trim() ?? '';
                 return GestureDetector(
                   onTap: () {
                     // TODO: Show image in full screen
@@ -1016,8 +1353,15 @@ class ProductDetailsScreen extends StatelessWidget {
                   },
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: CachedNetworkImage(
-                      imageUrl: image,
+                    child: imgUrl.isEmpty
+                        ? Container(
+                            width: 40,
+                            height: 40,
+                            color: AppColors.backgroundGrey,
+                            child: Icon(Icons.image, size: 12, color: AppColors.textTertiary),
+                          )
+                        : CachedNetworkImage(
+                      imageUrl: imgUrl,
                       width: 40,
                       height: 40,
                       fit: BoxFit.cover,
@@ -1033,9 +1377,9 @@ class ProductDetailsScreen extends StatelessWidget {
                         color: AppColors.backgroundGrey,
                         child: Icon(Icons.image_not_supported, size: 12, color: AppColors.textTertiary),
                       ),
-                    ),
-                  ),
-                );
+                    )),
+                  );
+
               }).toList(),
             ),
           ],
@@ -1307,26 +1651,35 @@ $productUrl
                               borderRadius: BorderRadius.vertical(
                                 top: Radius.circular(ScreenSize.tileBorderRadius),
                               ),
-                              child: CachedNetworkImage(
-                                imageUrl: product['image'] ?? '',
-                                width: double.infinity,
-                                height: ScreenSize.heightPercent(12),
-                                fit: BoxFit.contain,
-                                placeholder: (context, url) => Container(
-                                  color: AppColors.backgroundGrey,
-                                  height: ScreenSize.heightPercent(12),
-                                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                                ),
-                                errorWidget: (context, url, error) => Container(
-                                  color: AppColors.backgroundGrey,
-                                  height: ScreenSize.heightPercent(12),
-                                  child: Icon(
-                                    Icons.image_not_supported,
-                                    size: 16,
-                                    color: AppColors.textTertiary,
-                                  ),
-                                ),
-                              ),
+                              child: () {
+                                final img = (product['image']?.toString() ?? '').trim();
+                                return img.isEmpty
+                                    ? Container(
+                                        color: AppColors.backgroundGrey,
+                                        height: ScreenSize.heightPercent(12),
+                                        child: Icon(Icons.image_not_supported, size: 16, color: AppColors.textTertiary),
+                                      )
+                                    : CachedNetworkImage(
+                                      imageUrl: img,
+                                      width: double.infinity,
+                                      height: ScreenSize.heightPercent(12),
+                                      fit: BoxFit.contain,
+                                      placeholder: (context, url) => Container(
+                                        color: AppColors.backgroundGrey,
+                                        height: ScreenSize.heightPercent(12),
+                                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                      ),
+                                      errorWidget: (context, url, error) => Container(
+                                        color: AppColors.backgroundGrey,
+                                        height: ScreenSize.heightPercent(12),
+                                        child: Icon(
+                                          Icons.image_not_supported,
+                                          size: 16,
+                                          color: AppColors.textTertiary,
+                                        ),
+                                      ),
+                                    );
+                              }(),
                             ),
                             if (product['rating'] != null && (product['rating'] as double) > 0)
                               Positioned(
@@ -1364,31 +1717,38 @@ $productUrl
                               ),
                           ],
                         ),
-                        Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                product['name'] ?? '',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    product['name'] ?? '',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                '\$${product['price']?.toStringAsFixed(2) ?? '0.00'}',
-                                style: TextStyle(
-                                  fontSize: ScreenSize.textExtraSmall,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primary,
+                                SizedBox(height: 2),
+                                Text(
+                                  '\$${product['price']?.toStringAsFixed(2) ?? '0.00'}',
+                                  style: TextStyle(
+                                    fontSize: ScreenSize.textExtraSmall,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -1404,6 +1764,10 @@ $productUrl
   }
   
   Widget _buildBottomBar(ProductController controller) {
+    controller.isLoading.value; // Obx ko trigger – loading khatam hone par bottom bar dubara build
+    final isDigital = _isDigitalProduct(controller);
+    // Digital: no Add to Cart / Buy Now in bottom bar – purchase only via preview "Pay & Download"
+    if (isDigital) return const SizedBox.shrink();
     return Container(
       padding: EdgeInsets.all(ScreenSize.spacingSmall),
       decoration: BoxDecoration(
@@ -1482,5 +1846,149 @@ $productUrl
       return AppColors.textPrimary;
     }
   }
+
+  bool _isDigitalProduct(ProductController controller) {
+    final v = controller.product?['is_digital'];
+    return v == true || v == 1;
+  }
 }
 
+/// Top-area video player for digital video product (red circle area).
+/// Plays for [durationSeconds] then stops until payment – no loop.
+class _DigitalVideoTopArea extends StatefulWidget {
+  final String previewUrl;
+  final int durationSeconds;
+  final VoidCallback onPayPressed;
+
+  const _DigitalVideoTopArea({
+    required this.previewUrl,
+    this.durationSeconds = 15,
+    required this.onPayPressed,
+  });
+
+  @override
+  State<_DigitalVideoTopArea> createState() => _DigitalVideoTopAreaState();
+}
+
+class _DigitalVideoTopAreaState extends State<_DigitalVideoTopArea> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+  bool _previewEnded = false;
+  Timer? _limitTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.previewUrl.isNotEmpty) _initVideo();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DigitalVideoTopArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.previewUrl != widget.previewUrl && widget.previewUrl.isNotEmpty && _controller == null) {
+      _initVideo();
+    }
+  }
+
+  Future<void> _initVideo() async {
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.previewUrl));
+    try {
+      await _controller!.initialize();
+      if (mounted) {
+        setState(() => _initialized = true);
+        _controller!.play();
+        // 15 sec ke baad video ruk jayegi – payment tak aage nahi chalegi
+        _limitTimer = Timer(Duration(seconds: widget.durationSeconds), () {
+          if (!mounted) return;
+          _controller?.pause();
+          setState(() => _previewEnded = true);
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _limitTimer?.cancel();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.previewUrl.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+    if (!_initialized || _controller == null || !_controller!.value.isInitialized) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: _controller!.value.aspectRatio,
+              child: VideoPlayer(_controller!),
+            ),
+          ),
+          if (_previewEnded)
+            Container(
+              color: Colors.black54,
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(ScreenSize.spacingMedium),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.lock, size: 48, color: Colors.white70),
+                      SizedBox(height: 12),
+                      Text(
+                        'Preview ended (${widget.durationSeconds} sec)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: ScreenSize.textMedium,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Pay to unlock full video',
+                        style: TextStyle(color: Colors.white70, fontSize: ScreenSize.textSmall),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: widget.onPayPressed,
+                        icon: Icon(Icons.payment, size: 20),
+                        label: Text('Pay & Download'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

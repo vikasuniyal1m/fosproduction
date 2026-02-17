@@ -16,7 +16,7 @@ class StripeService {
   /// Call this in main.dart or app initialization
   static Future<void> initialize(String publishableKey) async {
     Stripe.publishableKey = publishableKey;
-    Stripe.merchantIdentifier = 'merchant.com.yourapp'; // Optional, for Apple Pay
+    // Stripe.merchantIdentifier = 'merchant.com.yourapp'; // Optional, for Apple Pay
     await Stripe.instance.applySettings();
   }
   
@@ -226,22 +226,26 @@ class StripeService {
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: merchantDisplayName ?? 'Your Store',
-          customerId: customerId,
-          customerEphemeralKeySecret: customerEphemeralKeySecret,
-          billingDetails: finalBillingDetails,
-          applePay: const PaymentSheetApplePay(
-            merchantCountryCode: 'IN',
-          ),
-          googlePay: const PaymentSheetGooglePay(
-            merchantCountryCode: 'IN',
-            testEnv: true, // Set to false for production
-          ),
+          merchantDisplayName: merchantDisplayName ?? 'FOS Productions',
+          customerId: (customerId != null && customerId.isNotEmpty) ? customerId : null,
+          customerEphemeralKeySecret: (customerEphemeralKeySecret != null && customerEphemeralKeySecret.isNotEmpty) ? customerEphemeralKeySecret : null,
+          allowsDelayedPaymentMethods: true,
+          returnURL: 'com.fruitsofspirit.ecommerce://stripe-redirect',
           style: ThemeMode.system,
+          // Explicitly nullify wallet configurations if not ready, to prevent hanging
+          // applePay: const PaymentSheetApplePay(merchantCountryCode: 'US'), 
+          // googlePay: const PaymentSheetGooglePay(merchantCountryCode: 'US', testEnv: true),
+          appearance: const PaymentSheetAppearance(
+            colors: PaymentSheetAppearanceColors(
+              primary: AppColors.primary,
+            ),
+          ),
+          billingDetails: finalBillingDetails,
         ),
       );
     } catch (e) {
       log('Error initializing payment sheet: $e');
+      debugPrint('[StripeService] Error initializing payment sheet: $e');
       rethrow;
     }
   }
@@ -251,9 +255,11 @@ class StripeService {
   /// Returns the payment result
   Future<Map<String, dynamic>> presentPaymentSheet() async {
     try {
+      debugPrint('[StripeService] Presenting payment sheet via Stripe SDK...');
       // Present payment sheet - this will handle the entire payment flow
       // including card input, Apple Pay, Google Pay, etc.
       await Stripe.instance.presentPaymentSheet();
+      debugPrint('[StripeService] Payment sheet presented and completed successfully.');
 
       // If we reach here, payment was successful
       // The payment intent status is updated automatically by Stripe
@@ -262,12 +268,14 @@ class StripeService {
         'status': 'succeeded',
       };
     } on StripeException catch (e) {
+      debugPrint('[StripeService] StripeException caught: ${e.error.message}');
       if (e.error.code == FailureCode.Canceled) {
         throw Exception('Payment was cancelled');
       } else {
         throw Exception('Payment failed: ${e.error.message ?? e.error.code}');
       }
     } catch (e) {
+      debugPrint('[StripeService] Generic error caught in presentPaymentSheet: $e');
       throw Exception('Payment sheet error: $e');
     }
   }

@@ -35,10 +35,25 @@ class CheckoutController extends GetxController {
   // Coupon
   final RxMap<String, dynamic> appliedCoupon = <String, dynamic>{}.obs;
   final RxList<Map<String, dynamic>> availableCoupons = <Map<String, dynamic>>[].obs;
-  
+
+  /// When true, cart is digital-only (e.g. from preview "Pay & Download"); no address required.
+  bool isDigitalQuickPay = false;
+  bool _hasTriggeredDirectStripe = false;
+
+  /// Digital quick pay: checkout screen skip karke seedha Stripe pe bhejne ke liye (sirf ek baar).
+  Future<void> tryGoDirectToStripe() async {
+    if (!isDigitalQuickPay || items.isEmpty || _hasTriggeredDirectStripe) return;
+    _hasTriggeredDirectStripe = true;
+    final order = await placeOrder();
+    // Digital: Stripe opened with Get.offNamed, so cancel/fail par already wapas aa chuke; sirf normal checkout par back karo
+    if (order == null && !isDigitalQuickPay) Get.back();
+  }
+
   @override
   void onInit() {
     super.onInit();
+    final args = Get.arguments as Map<String, dynamic>?;
+    isDigitalQuickPay = args?['digital_quick_pay'] == true;
     loadCheckoutSummary();
   }
   
@@ -115,11 +130,19 @@ class CheckoutController extends GetxController {
       }
       
       if (paymentMethods.isNotEmpty) {
-        final defaultPayment = paymentMethods.firstWhereOrNull((pm) => pm['is_default'] == true);
-        if (defaultPayment != null) {
-          selectedPaymentMethodId.value = defaultPayment['id'] as int;
+        if (isDigitalQuickPay) {
+          final stripePayment = paymentMethods.cast<Map<String, dynamic>>().firstWhereOrNull((pm) => pm['type'] == 'stripe');
+          if (stripePayment != null) {
+            selectedPaymentMethodId.value = stripePayment['id'] as int;
+          }
+          selectedAddressId.value = 0; // Digital-only: no shipping address
         } else {
-          selectedPaymentMethodId.value = paymentMethods.first['id'] as int;
+          final defaultPayment = paymentMethods.firstWhereOrNull((pm) => pm['is_default'] == true);
+          if (defaultPayment != null) {
+            selectedPaymentMethodId.value = defaultPayment['id'] as int;
+          } else {
+            selectedPaymentMethodId.value = paymentMethods.first['id'] as int;
+          }
         }
       }
       
@@ -202,7 +225,7 @@ class CheckoutController extends GetxController {
       return null;
     }
 
-    if (selectedAddressId.value == 0) {
+    if (selectedAddressId.value == 0 && !isDigitalQuickPay) {
       Get.snackbar('Error', 'Please select a shipping address');
       return null;
     }
@@ -229,15 +252,17 @@ class CheckoutController extends GetxController {
       }
       return order; // Return order for confirmation screen
     } else {
-      // For Stripe and other online payments, navigate to Stripe Payment Screen
-      // The order will be created *after* successful payment in StripePaymentController
-      final result = await Get.toNamed(
-        AppRoutes.stripePayment,
-        arguments: {
-          'amount': total.value,
-          'currency': 'usd', // Assuming currency is always USD for now
-        },
-      );
+      final args = {
+        'amount': total.value,
+        'currency': 'usd',
+        'payment_method_id': selectedPaymentMethodId.value,
+        'shipping_address_id': selectedAddressId.value,
+        'coupon_code': couponCode.value,
+        'notes': notes.value,
+        'is_digital_order': isDigitalQuickPay,
+      };
+      // Digital: Stripe pe toNamed use karo taaki Checkout stack me rahe – payment success par createOrderFromPayment ke liye controller mile
+      final result = await Get.toNamed(AppRoutes.stripePayment, arguments: args);
 
       // Check if payment was successful and order was created
       if (result != null && result is Map<String, dynamic> && result['success'] == true) {
@@ -245,8 +270,9 @@ class CheckoutController extends GetxController {
         // StripePaymentController should return the created order.
         return result['order'];
       } else {
-        // Payment failed or was cancelled
-        Get.snackbar('Payment Failed', 'Your payment could not be processed. Please try again.');
+        if (!isDigitalQuickPay) {
+          Get.snackbar('Payment Failed', 'Your payment could not be processed. Please try again.');
+        }
         return null;
       }
     }
@@ -259,10 +285,10 @@ class CheckoutController extends GetxController {
     try {
       final paymentType = paymentMethod['type'] ?? 'cod';
       
-      // Prepare order data
-      final orderData = {
-        'shipping_address_id': selectedAddressId.value,
-        'billing_address_id': selectedAddressId.value,
+      // Digital product: shipping address not required (send 0 if API requires the key)
+      final orderData = <String, dynamic>{
+        'shipping_address_id': isDigitalQuickPay ? 0 : selectedAddressId.value,
+        'billing_address_id': isDigitalQuickPay ? 0 : selectedAddressId.value,
         'payment_method': paymentType,
         if (couponCode.value.isNotEmpty) 'coupon_code': couponCode.value,
         if (notes.value.isNotEmpty) 'notes': notes.value,

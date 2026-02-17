@@ -127,13 +127,14 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
       }
 
       Widget _buildPaymentSheetButton(StripePaymentController controller) {
-        return ResponsiveButton(
+        return Obx(() => ResponsiveButton(
           onPressed: controller.processPaymentWithSheet,
           text: 'Pay with Card or Wallet',
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.textWhite,
           icon: Icon(Icons.payment),
-        );
+          isLoading: controller.isProcessing.value,
+        ));
       }
 
       Widget _buildSecurityInfo() {

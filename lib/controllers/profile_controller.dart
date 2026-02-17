@@ -1,7 +1,10 @@
+import 'dart:developer' show log;
+import 'dart:io' show Directory;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'checkout_controller.dart';
 import 'dart:async';
@@ -66,7 +69,8 @@ class ProfileController extends GetxController {
   final TextEditingController addressPincodeController = TextEditingController();
   final RxBool isDefaultAddress = false.obs;
   final RxBool isSavingAddress = false.obs;
-  
+  final RxBool isDetectingLocation = false.obs;
+
   // Payment Methods
   final RxBool isLoadingPaymentMethods = false.obs;
   final RxList<Map<String, dynamic>> paymentMethods = <Map<String, dynamic>>[].obs;
@@ -283,14 +287,18 @@ class ProfileController extends GetxController {
         // Ensure status is lowercase for consistent comparison
         final orderStatus = (order['status'] ?? 'pending').toString().toLowerCase();
         
+        final items = order['items'] as List? ?? [];
+        final hasDigital = order['has_digital'] == true ||
+            (items.any((i) => i['is_digital'] == true || i['is_digital'] == 1));
         return {
           'id': orderId,
           'order_number': order['order_number'] ?? orderId.toString(),
           'status': orderStatus,
           'total_amount': double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0,
           'created_at': order['created_at'] ?? '',
-          'items': order['items'] ?? [],
-          'payment_status': order['payment_status'] ?? 'pending', // Add payment_status
+          'items': items,
+          'payment_status': (order['payment_status'] ?? 'pending').toString().toLowerCase(),
+          'has_digital': hasDigital,
         };
       }).toList();
       
@@ -360,141 +368,188 @@ class ProfileController extends GetxController {
     isDefaultAddress.value = false;
   }
   
-  /// Detect current location
-  Future<void> detectCurrentLocation() async {
+  /// Detect current location.
+  /// If [onLocationDetected] is provided, it is called with the location data and the
+  /// controller's text fields are not updated (for use when the screen uses its own controllers).
+  Future<void> detectCurrentLocation({void Function(Map<String, dynamic>?)? onLocationDetected}) async {
+    debugPrint('[UseCurrentLocation] START - detectCurrentLocation called');
+    isDetectingLocation.value = true;
+    Get.snackbar(
+      'Location',
+      'Detecting your location...',
+      snackPosition: SnackPosition.BOTTOM,
+      duration: const Duration(seconds: 2),
+    );
+
     final locationService = LocationService();
-    
-    // 1. Request Permission first
-    final permission = await locationService.requestLocationPermission();
-    
-    if (permission != LocationPermission.always && permission != LocationPermission.whileInUse) {
-      // Go back to previous page as requested if permission failed
-      Future.delayed(const Duration(seconds: 2), () {
-        if (Get.currentRoute.contains('add-edit-address')) {
-          Get.back();
-        }
-      });
+
+    debugPrint('[UseCurrentLocation] Requesting location permission...');
+    LocationPermission permission;
+    try {
+      permission = await locationService.requestLocationPermission().timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          debugPrint('[UseCurrentLocation] Permission request timed out');
+          return LocationPermission.denied;
+        },
+      );
+      debugPrint('[UseCurrentLocation] Back from permission request, value: $permission');
+    } catch (e, st) {
+      debugPrint('[UseCurrentLocation] Exception after permission: $e');
+      debugPrint('[UseCurrentLocation] $st');
+      isDetectingLocation.value = false;
+      Get.snackbar(
+        'Location',
+        'Something went wrong with permission. Please try again or enter address manually.',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 3),
+      );
       return;
     }
 
-    // Show loading dialog
-    Get.dialog(
-      const Center(child: CircularProgressIndicator()),
-      barrierDismissible: false,
-    );
-    
+    final isGranted = permission == LocationPermission.whileInUse || permission == LocationPermission.always;
+    debugPrint('[UseCurrentLocation] isGranted=$isGranted');
+
+    if (!isGranted) {
+      debugPrint('[UseCurrentLocation] PERMISSION DENIED - stopping');
+      isDetectingLocation.value = false;
+      Get.snackbar(
+        'Location',
+        'Location permission is needed to use current location. You can enter address manually.',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 3),
+      );
+      return;
+    }
+
+    debugPrint('[UseCurrentLocation] Permission OK, calling getCurrentLocation now...');
     try {
-      // Get current location with a timeout
+      // Short delay so OS can apply permission (avoids stuck on some devices)
+      await Future.delayed(const Duration(milliseconds: 400));
+      debugPrint('[UseCurrentLocation] Calling locationService.getCurrentLocation()...');
       final locationData = await locationService.getCurrentLocation().timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 20),
         onTimeout: () {
-          if (Get.isDialogOpen!) Get.back(); // Close loading dialog
+          debugPrint('[UseCurrentLocation] TIMEOUT - getCurrentLocation took > 20s');
           Get.snackbar(
             'Location Timeout',
-            'Could not get location in time. Please check your GPS and try again.',
+            'Could not get location in time. Please check GPS and try again.',
             snackPosition: SnackPosition.BOTTOM,
+            duration: const Duration(seconds: 3),
           );
-          return null; // Return null on timeout
+          return null;
         },
       );
-      
-      if (Get.isDialogOpen!) {
-        Get.back(); // Close loading dialog if still open
-      }
-      
+
       if (locationData != null) {
-        // Fill form with location data
-        addressLine1Controller.text = locationData['address_line1'] ?? '';
-        addressLine2Controller.text = locationData['address_line2'] ?? '';
-        addressCityController.text = locationData['city'] ?? '';
-        addressStateController.text = locationData['state'] ?? '';
-        addressPincodeController.text = locationData['pincode'] ?? '';
-        
+        debugPrint('[UseCurrentLocation] SUCCESS - address: ${locationData['address_line1']}, city: ${locationData['city']}, state: ${locationData['state']}, pincode: ${locationData['pincode']}');
+        if (onLocationDetected != null) {
+          onLocationDetected(locationData);
+        } else {
+          addressLine1Controller.text = locationData['address_line1'] ?? '';
+          addressLine2Controller.text = locationData['address_line2'] ?? '';
+          addressCityController.text = locationData['city'] ?? '';
+          addressStateController.text = locationData['state'] ?? '';
+          addressPincodeController.text = locationData['pincode'] ?? '';
+        }
         Get.snackbar(
           'Success',
-          'Location detected! Please verify your address.',
+          'Address filled from your location. Please verify and add name & phone.',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 4),
+        );
+      } else {
+        debugPrint('[UseCurrentLocation] locationData is NULL - could not get address');
+        Get.snackbar(
+          'Location Unavailable',
+          'Could not get address from location. Please enter address manually.',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 3),
         );
-      } else {
-        // Handle other cases where locationData is null
-        Get.snackbar(
-          'Location Unavailable',
-          'Could not detect location. Please enter address manually.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        
-        // Go back if location detection failed
-        Future.delayed(const Duration(seconds: 2), () {
-          if (Get.currentRoute.contains('add-edit-address')) {
-            Get.back();
-          }
-        });
       }
-    } catch (e) {
-      if (Get.isDialogOpen!) {
-        Get.back(); // Close dialog on error
-      }
+    } catch (e, stack) {
+      debugPrint('[UseCurrentLocation] CATCH - error: $e');
+      debugPrint('[UseCurrentLocation] stackTrace: $stack');
       if (e is! TimeoutException) {
-        Get.snackbar('Error', 'An unexpected error occurred: ${e.toString()}');
+        Get.snackbar(
+          'Error',
+          'Something went wrong. Please enter address manually.',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 3),
+        );
       }
-      
-      // Go back on error
-      Future.delayed(const Duration(seconds: 2), () {
-        if (Get.currentRoute.contains('add-edit-address')) {
-          Get.back();
-        }
-      });
+    } finally {
+      debugPrint('[UseCurrentLocation] DONE - isDetectingLocation = false');
+      isDetectingLocation.value = false;
     }
   }
   
-  /// Save address (add or update)
+  /// Save address (add or update) using form controllers
   Future<void> saveAddress(int? addressId) async {
     if (!addressFormKey.currentState!.validate()) {
       return;
     }
-    
+    final addressData = {
+      'name': addressNameController.text.trim(),
+      'phone': addressPhoneController.text.trim(),
+      'address_line1': addressLine1Controller.text.trim(),
+      'address_line2': addressLine2Controller.text.trim(),
+      'city': addressCityController.text.trim(),
+      'state': addressStateController.text.trim(),
+      'pincode': addressPincodeController.text.trim(),
+      'type': addressTypeController.text,
+      'is_default': isDefaultAddress.value ? 1 : 0,
+    };
+    await saveAddressWithData(addressId, addressData);
+  }
+
+  /// Save address (add or update) using provided data. Use this when the screen
+  /// owns its own form controllers to avoid using disposed controllers.
+  /// [fromCheckout] when true: pop back to checkout; when false: go to home.
+  Future<void> saveAddressWithData(int? addressId, Map<String, dynamic> addressData, {bool fromCheckout = false}) async {
     isSavingAddress.value = true;
     try {
-      final addressData = {
-        'name': addressNameController.text.trim(),
-        'phone': addressPhoneController.text.trim(),
-        'address_line1': addressLine1Controller.text.trim(),
-        'address_line2': addressLine2Controller.text.trim(),
-        'city': addressCityController.text.trim(),
-        'state': addressStateController.text.trim(),
-        'pincode': addressPincodeController.text.trim(),
-        'type': addressTypeController.text,
-        'is_default': isDefaultAddress.value ? 1 : 0,
+      final data = {
+        'name': (addressData['name'] ?? '').toString().trim(),
+        'phone': (addressData['phone'] ?? '').toString().trim(),
+        'address_line1': (addressData['address_line1'] ?? '').toString().trim(),
+        'address_line2': (addressData['address_line2'] ?? '').toString().trim(),
+        'city': (addressData['city'] ?? '').toString().trim(),
+        'state': (addressData['state'] ?? '').toString().trim(),
+        'pincode': (addressData['pincode'] ?? '').toString().trim(),
+        'type': (addressData['type'] ?? 'home').toString(),
+        'is_default': addressData['is_default'] == true || addressData['is_default'] == 1 ? 1 : 0,
       };
-      
+
       if (addressId != null) {
-        // Update existing address
         final updateUrl = ApiEndpoints.addressesUpdate.replaceAll('{id}', addressId.toString());
-        await _apiService.put(updateUrl, data: addressData);
+        await _apiService.put(updateUrl, data: data);
         Get.snackbar('Success', 'Address updated successfully');
       } else {
-        // Add new address
-        await _apiService.post(ApiEndpoints.addressesAdd, data: addressData);
+        await _apiService.post(ApiEndpoints.addressesAdd, data: data);
         Get.snackbar('Success', 'Address added successfully');
       }
-      
-      clearAddressForm();
-      await loadAddresses();
-      
-      // Refresh checkout summary if we are coming from checkout
-      try {
-        if (Get.isRegistered<CheckoutController>()) {
-          Get.find<CheckoutController>().loadCheckoutSummary();
-        }
-      } catch (e) {
-        print('Error refreshing checkout: $e');
-      }
 
-      Get.back();
+      // Navigate in next frame: back to checkout if from checkout, else go to home.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (fromCheckout) {
+          Get.back(result: true);
+        } else {
+          Get.offAllNamed(AppRoutes.home);
+        }
+        clearAddressForm();
+        loadAddresses();
+        try {
+          if (Get.isRegistered<CheckoutController>()) {
+            Get.find<CheckoutController>().loadCheckoutSummary();
+          }
+        } catch (e) {
+          print('Error refreshing checkout: $e');
+        }
+        isSavingAddress.value = false;
+      });
     } catch (e) {
       ApiService.showErrorSnackbar(e);
-    } finally {
       isSavingAddress.value = false;
     }
   }
@@ -644,7 +699,85 @@ class ProfileController extends GetxController {
       return null;
     }
   }
-  
+
+  /// Get secure download URL for a digital product order item. Returns URL or null.
+  /// Lifetime access – user can download anytime from My Orders.
+  Future<String?> getDigitalDownloadUrl(int orderItemId) async {
+    final info = await getDigitalDownloadInfo(orderItemId);
+    return info?['download_url'] as String?;
+  }
+
+  /// Get download URL and suggested filename (correct extension, not .php).
+  /// Returns map with 'download_url' and 'suggested_filename', or null on error.
+  Future<Map<String, dynamic>?> getDigitalDownloadInfo(int orderItemId) async {
+    try {
+      log('[DigitalDownload] Fetching download URL for order_item_id=$orderItemId');
+      debugPrint('[DigitalDownload] getDigitalDownloadUrl orderItemId=$orderItemId');
+      final response = await _apiService.get(
+        ApiEndpoints.orderDownload,
+        queryParameters: {'order_item_id': orderItemId.toString()},
+      );
+      final data = ApiService.handleResponse(response);
+      final downloadUrl = data['download_url'] as String?;
+      if (downloadUrl == null || downloadUrl.isEmpty) {
+        log('[DigitalDownload] No download_url in response for orderItemId=$orderItemId');
+        Get.snackbar('Error', 'Download link not available', snackPosition: SnackPosition.BOTTOM);
+        return null;
+      }
+      final suggestedFilename = data['suggested_filename']?.toString().trim();
+      log('[DigitalDownload] Download URL received for orderItemId=$orderItemId (lifetime access)');
+      debugPrint('[DigitalDownload] Download URL ready for order_item_id=$orderItemId');
+      return {
+        'download_url': downloadUrl,
+        'suggested_filename': suggestedFilename?.isNotEmpty == true ? suggestedFilename : null,
+      };
+    } catch (e) {
+      log('[DigitalDownload] Error getDigitalDownloadUrl orderItemId=$orderItemId: $e');
+      ApiService.showErrorSnackbar(e);
+      return null;
+    }
+  }
+
+  /// Download digital product to device storage (lifetime – saved locally).
+  /// Uses suggested_filename from API so file gets correct extension (e.g. .mp4), not .php.
+  Future<String?> downloadDigitalProductToDevice(int orderItemId, String productName) async {
+    try {
+      final info = await getDigitalDownloadInfo(orderItemId);
+      if (info == null) return null;
+      final url = info['download_url'] as String?;
+      if (url == null || url.isEmpty) return null;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final downloadDir = await Directory('${dir.path}/DigitalDownloads').create(recursive: true);
+      final suggested = info['suggested_filename'] as String?;
+      String fileName;
+      if (suggested != null && suggested.isNotEmpty) {
+        // Use API filename so we get correct extension (e.g. video.mp4)
+        fileName = suggested.replaceAll(RegExp(r'[^\w\s\-.]'), '_').replaceAll(RegExp(r'\s+'), '_');
+        if (fileName.isEmpty) fileName = 'digital_$orderItemId';
+      } else {
+        final safeName = productName.replaceAll(RegExp(r'[^\w\s\-.]'), '_').replaceAll(RegExp(r'\s+'), '_');
+        final ext = '.mp4';
+        fileName = '${safeName.isEmpty ? 'digital_$orderItemId' : safeName}$ext';
+      }
+      final savePath = '${downloadDir.path}/$fileName';
+
+      log('[DigitalDownload] Saving to device: orderItemId=$orderItemId path=$savePath');
+      debugPrint('[DigitalDownload] Downloading to $savePath');
+
+      final dio = Dio();
+      await dio.download(url, savePath);
+
+      log('[DigitalDownload] Saved to device successfully: $savePath');
+      debugPrint('[DigitalDownload] File saved: $savePath');
+      return savePath;
+    } catch (e) {
+      log('[DigitalDownload] Error saving to device orderItemId=$orderItemId: $e');
+      debugPrint('[DigitalDownload] downloadDigitalProductToDevice error: $e');
+      rethrow;
+    }
+  }
+
   /// Cancel order
   Future<void> cancelOrder(int orderId, String reason) async {
     if (orderId <= 0) {

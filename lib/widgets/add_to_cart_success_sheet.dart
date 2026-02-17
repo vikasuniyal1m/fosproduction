@@ -108,24 +108,7 @@ class AddToCartSuccessSheet extends StatelessWidget {
                           // Product image
                           ClipRRect(
                             borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-                            child: CachedNetworkImage(
-                              imageUrl: product['image'] ?? '',
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                width: 100,
-                                height: 100,
-                                color: AppColors.backgroundGrey,
-                                child: Icon(Icons.image, color: AppColors.textSecondary),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                width: 100,
-                                height: 100,
-                                color: AppColors.backgroundGrey,
-                                child: Icon(Icons.image_not_supported, color: AppColors.textSecondary),
-                              ),
-                            ),
+                            child: _productImageWidget(product['image'], 100),
                           ),
                           SizedBox(width: ScreenSize.spacingMedium),
                           
@@ -236,6 +219,26 @@ class AddToCartSuccessSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _productImageWidget(dynamic image, double size) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image, color: AppColors.textSecondary),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image, color: AppColors.textSecondary)),
+      errorWidget: (context, u, e) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, color: AppColors.textSecondary)),
     );
   }
 }

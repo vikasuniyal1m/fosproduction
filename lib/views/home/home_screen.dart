@@ -10,6 +10,8 @@ import '../../utils/app_colors.dart';
 import '../../controllers/home_controller.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/cart_controller.dart';
+import '../../controllers/profile_controller.dart';
+import '../../utils/cache_manager.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/floating_help_button.dart';
@@ -86,6 +88,14 @@ class HomeScreen extends StatelessWidget {
                           _buildPromotionalBanner(homeController),
                           SizedBox(height: ScreenSize.sectionSpacing),
                           
+                          // My Orders shortcut – banner ke turant neeche, Categories se upar (tap = orders / digital downloads)
+                          _buildMyOrdersShortcut(),
+                          SizedBox(height: ScreenSize.sectionSpacing),
+
+                          // Digital Products – alag section (instant download after payment)
+                          _buildDigitalProductsSection(homeController),
+                          SizedBox(height: ScreenSize.sectionSpacing),
+
                           // Categories
                           _buildCategoriesSection(homeController),
                           SizedBox(height: ScreenSize.sectionSpacing),
@@ -257,7 +267,329 @@ class HomeScreen extends StatelessWidget {
       );
     });
   }
-  
+
+  /// My Orders shortcut – opens orders list (digital downloads bhi yahan se)
+  Widget _buildMyOrdersShortcut() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: ScreenSize.paddingMedium),
+      child: Material(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+        elevation: 1,
+        shadowColor: Colors.black12,
+        child: InkWell(
+          onTap: () {
+            final profileController = Get.put(ProfileController());
+            profileController.navigateToOrders();
+          },
+          borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: ScreenSize.spacingMedium,
+              vertical: ScreenSize.spacingSmall * 1.5,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(ScreenSize.spacingSmall),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
+                  ),
+                  child: Icon(
+                    Icons.shopping_bag_outlined,
+                    size: ScreenSize.iconMedium,
+                    color: AppColors.primary,
+                  ),
+                ),
+                SizedBox(width: ScreenSize.spacingMedium),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'My Orders',
+                        style: TextStyle(
+                          fontSize: ScreenSize.textLarge,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'View orders & download digital products',
+                        style: TextStyle(
+                          fontSize: ScreenSize.textSmall,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  size: ScreenSize.iconMedium,
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Digital Products – alag widget/section (sirf digital products: music/video, download after payment)
+  Widget _buildDigitalProductsSection(HomeController controller) {
+    return Obx(() {
+      final list = controller.digitalProducts;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: ScreenSize.paddingMedium),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.download_rounded, size: 18, color: AppColors.primary),
+                            SizedBox(width: 6),
+                            Text(
+                              'Digital Products',
+                              style: TextStyle(
+                                fontSize: ScreenSize.textLarge,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Instant download after payment',
+                          style: TextStyle(
+                            fontSize: ScreenSize.textSmall,
+                            color: AppColors.textSecondary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => AppRoutes.toDigitalProducts(),
+                  child: Text('See all', style: TextStyle(fontSize: ScreenSize.textSmall, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: ScreenSize.spacingSmall),
+          SizedBox(
+            height: ScreenSize.productCardHorizontalHeight * 1.45,
+            child: list.isEmpty
+                ? _buildDigitalProductsPlaceholder()
+                : ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.symmetric(horizontal: ScreenSize.paddingMedium),
+                    itemCount: list.length,
+                    itemBuilder: (context, index) {
+                      final product = list[index];
+                      return Padding(
+                        padding: EdgeInsets.only(right: ScreenSize.spacingMedium),
+                        child: _buildDigitalProductCardForHome(product, controller),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      );
+    });
+  }
+
+  /// Placeholder when no digital products (music/video) – T-shirt etc. yahan nahi aate
+  Widget _buildDigitalProductsPlaceholder() {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: ScreenSize.paddingMedium),
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.music_video_rounded, size: 48, color: AppColors.primary.withOpacity(0.6)),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Music & Video',
+                    style: TextStyle(
+                      fontSize: ScreenSize.textMedium,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Digital products will appear here once added',
+                    style: TextStyle(
+                      fontSize: ScreenSize.textSmall,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Digital product card – same UI as Digital Products screen (image + play for video + Digital badge + name + price)
+  Widget _buildDigitalProductCardForHome(Map<String, dynamic> product, HomeController controller) {
+    final imageUrl = product['image'] as String?;
+    final name = product['name'] as String? ?? '';
+    final regularPrice = (product['price'] ?? 0.0) as num;
+    final salePrice = product['sale_price'] as num?;
+    final displayPrice = (salePrice ?? regularPrice).toDouble();
+    final cardWidth = ScreenSize.productCardHorizontalWidth;
+    final imageHeight = cardWidth * 0.85;
+
+    return GestureDetector(
+      onTap: () => controller.navigateToProductDetails(product['id']),
+      child: Container(
+        width: cardWidth,
+        margin: EdgeInsets.only(right: ScreenSize.spacingMedium),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(ScreenSize.tileBorderRadius)),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: imageHeight,
+                    child: imageUrl != null && imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(color: AppColors.background, child: Icon(Icons.music_note, color: AppColors.textTertiary)),
+                            errorWidget: (_, __, ___) => Container(color: AppColors.background, child: Icon(Icons.music_video_rounded, color: AppColors.textTertiary)),
+                          )
+                        : Container(
+                            color: AppColors.background,
+                            child: Icon(Icons.music_video_rounded, size: 48, color: AppColors.textTertiary),
+                          ),
+                  ),
+                ),
+                if (product['media_type'] == 'video')
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.play_circle_fill_rounded, size: 44, color: AppColors.textWhite),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  bottom: ScreenSize.spacingSmall,
+                  left: ScreenSize.spacingSmall,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.download_rounded, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Digital', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const NeverScrollableScrollPhysics(),
+                child: Padding(
+                  padding: EdgeInsets.all(ScreenSize.spacingSmall),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (product['category'] != null && product['category']['name'] != null)
+                        Text(
+                          product['category']['name'],
+                          style: TextStyle(fontSize: ScreenSize.textExtraSmall, color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      SizedBox(height: 2),
+                      Text(
+                        name,
+                        style: TextStyle(fontSize: ScreenSize.textSmall, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '\$${displayPrice.toStringAsFixed(2)}',
+                        style: TextStyle(fontSize: ScreenSize.textMedium, fontWeight: FontWeight.bold, color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   
   Widget _buildCategoriesSection(HomeController controller) {
     return Column(
@@ -694,6 +1026,48 @@ class HomeScreen extends StatelessWidget {
                   ),
                   child: _buildProductImage(product),
                 ),
+                // Play icon sirf video ke liye (audio/image ke liye nahi)
+                if (product['is_digital'] == true && product['media_type'] == 'video') ...[
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.play_circle_fill_rounded, size: 44, color: AppColors.textWhite),
+                      ),
+                    ),
+                  ),
+                ],
+                if (product['is_digital'] == true)
+                  Positioned(
+                    top: ScreenSize.spacingSmall,
+                    left: ScreenSize.spacingSmall,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download, size: 10, color: AppColors.textWhite),
+                          SizedBox(width: 4),
+                          Text(
+                            'Digital',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textWhite,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 // Favorite button
                 Positioned(
                   top: ScreenSize.spacingSmall,
@@ -899,6 +1273,40 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (product['is_digital'] == true && product['media_type'] == 'video') ...[
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.play_circle_fill_rounded, size: 44, color: AppColors.textWhite),
+                      ),
+                    ),
+                  ),
+                ],
+                if (product['is_digital'] == true)
+                  Positioned(
+                    bottom: ScreenSize.spacingSmall,
+                    left: ScreenSize.spacingSmall,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download, size: 10, color: AppColors.textWhite),
+                          SizedBox(width: 4),
+                          Text('Digital', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: AppColors.textWhite)),
+                        ],
+                      ),
+                    ),
+                  ),
                 // Favorite button
                 Positioned(
                   top: ScreenSize.spacingSmall,
@@ -1096,6 +1504,40 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (product['is_digital'] == true && product['media_type'] == 'video') ...[
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.play_circle_fill_rounded, size: 44, color: AppColors.textWhite),
+                      ),
+                    ),
+                  ),
+                ],
+                if (product['is_digital'] == true)
+                  Positioned(
+                    bottom: ScreenSize.spacingSmall,
+                    left: ScreenSize.spacingSmall,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.download, size: 10, color: AppColors.textWhite),
+                          SizedBox(width: 4),
+                          Text('Digital', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: AppColors.textWhite)),
+                        ],
+                      ),
+                    ),
+                  ),
                 // Favorite button
                 Positioned(
                   top: ScreenSize.spacingSmall,

@@ -18,8 +18,8 @@ class ApiService {
   ApiService() {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 10), // Reduced from 30 to 10 seconds
-      receiveTimeout: const Duration(seconds: 10), // Reduced from 30 to 10 seconds
+      connectTimeout: const Duration(seconds: 30), // Increased to 30 seconds for stable payments
+      receiveTimeout: const Duration(seconds: 30), // Increased to 30 seconds for stable payments
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

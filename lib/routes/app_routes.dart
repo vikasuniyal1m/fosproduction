@@ -13,6 +13,7 @@ import '../views/auth/new_password_screen.dart';
 import '../views/home/home_screen.dart';
 import '../views/products/product_details_screen.dart';
 import '../views/products/category_products_screen.dart';
+import '../views/products/digital_products_screen.dart';
 import '../controllers/product_controller.dart';
 import '../views/cart/cart_screen.dart';
 import '../controllers/cart_controller.dart';
@@ -50,6 +51,7 @@ import '../views/orders/order_details_screen.dart';
 import '../views/orders/invoice_view_screen.dart';
 import '../views/payment/payment_gateway_screen.dart';
 import '../views/payment/stripe_payment_screen.dart';
+import '../views/payment/digital_pay_redirect_screen.dart';
 import '../views/profile/notification_settings_screen.dart';
 import '../controllers/notification_controller.dart';
 import '../utils/cache_manager.dart';
@@ -67,6 +69,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String productDetails = '/product-details';
   static const String categoryProducts = '/category-products';
+  static const String digitalProducts = '/digital-products';
   static const String cart = '/cart';
   static const String profile = '/profile';
   static const String editProfile = '/edit-profile';
@@ -90,6 +93,7 @@ class AppRoutes {
   static const String orderTracking = '/order-tracking';
   static const String paymentGateway = '/payment-gateway';
   static const String stripePayment = '/stripe-payment';
+  static const String digitalPayRedirect = '/digital-pay-redirect';
   static const String loyaltyPoints = '/loyalty-points';
   static const String referralProgram = '/referral-program';
   static const String invoiceView = '/invoice-view';
@@ -172,6 +176,15 @@ class AppRoutes {
     GetPage(
       name: categoryProducts,
       page: () => const CategoryProductsScreen(),
+    ),
+    GetPage(
+      name: digitalProducts,
+      page: () => const DigitalProductsScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<HomeController>()) {
+          Get.put(HomeController());
+        }
+      }),
     ),
     GetPage(
       name: cart,
@@ -446,6 +459,13 @@ class AppRoutes {
       page: () => const StripePaymentScreen(),
     ),
     GetPage(
+      name: digitalPayRedirect,
+      page: () => const DigitalPayRedirectScreen(),
+      binding: BindingsBuilder(() {
+        Get.put(CheckoutController());
+      }),
+    ),
+    GetPage(
       name: termsConditions,
       page: () => const TermsConditionsScreen(),
     ),
@@ -481,6 +501,8 @@ class AppRoutes {
       'categoryName': categoryName,
     },
   );
+  static void toDigitalProducts() => Get.toNamed(digitalProducts);
+  static void toOrders() => Get.toNamed(orders);
   static void toWishlist() {
     // Check if user is logged in
     if (!CacheManager.isLoggedIn()) {

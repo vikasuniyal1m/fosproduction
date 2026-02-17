@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/profile_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../routes/app_routes.dart';
 
 /// Order Details Screen
 /// Shows complete order information including items, address, payment, etc.
@@ -22,20 +24,31 @@ class OrderDetailsScreen extends StatelessWidget {
     final controller = Get.put(ProfileController());
     
     print('[OrderDetailsScreen] Building with orderId: $orderId');
-    
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Order Details',
-          style: TextStyle(fontSize: ScreenSize.headingMedium),
+
+    void goToOrders() => Get.offAllNamed(AppRoutes.orders);
+
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) goToOrders();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Order Details',
+            style: TextStyle(fontSize: ScreenSize.headingMedium),
+          ),
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.textWhite,
+          elevation: 0,
+          centerTitle: true,
+          toolbarHeight: ScreenSize.buttonHeightLarge,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: goToOrders,
+          ),
         ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.textWhite,
-        elevation: 0,
-        centerTitle: true,
-        toolbarHeight: ScreenSize.buttonHeightLarge,
-      ),
       body: FutureBuilder<Map<String, dynamic>?>(
         future: controller.getOrderDetails(orderId),
         builder: (context, snapshot) {
@@ -72,7 +85,7 @@ class OrderDetailsScreen extends StatelessWidget {
                   ),
                   SizedBox(height: ScreenSize.spacingMedium),
                   ElevatedButton(
-                    onPressed: () => Get.back(),
+                    onPressed: goToOrders,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: AppColors.textWhite,
@@ -98,7 +111,8 @@ class OrderDetailsScreen extends StatelessWidget {
           final shippingAddress = order['shipping_address'] as Map<String, dynamic>?;
           final billingAddress = order['billing_address'] as Map<String, dynamic>?;
           final status = (order['status'] ?? 'pending').toString().toLowerCase();
-          
+          final hasPhysicalItems = items.any((i) => i is Map && (i['is_digital'] != true && i['is_digital'] != 1));
+
           print('[OrderDetailsScreen] Building order details UI');
           return SingleChildScrollView(
             padding: EdgeInsets.all(ScreenSize.spacingMedium),
@@ -114,20 +128,20 @@ class OrderDetailsScreen extends StatelessWidget {
                 if (items.isNotEmpty) ...[
                   _buildSectionTitle('Order Items'),
                   SizedBox(height: ScreenSize.spacingSmall),
-                  _buildOrderItems(items),
+                  _buildOrderItems(items, controller, order),
                   SizedBox(height: ScreenSize.spacingMedium),
                 ],
                 
-                // Shipping Address
-                if (shippingAddress != null) ...[
+                // Shipping Address – not for digital-only orders
+                if (hasPhysicalItems && shippingAddress != null) ...[
                   _buildSectionTitle('Shipping Address'),
                   SizedBox(height: ScreenSize.spacingSmall),
                   _buildAddressCard(shippingAddress, 'Shipping'),
                   SizedBox(height: ScreenSize.spacingMedium),
                 ],
                 
-                // Billing Address (if different)
-                if (billingAddress != null && billingAddress != shippingAddress) ...[
+                // Billing Address (if different) – not for digital-only
+                if (hasPhysicalItems && billingAddress != null && billingAddress != shippingAddress) ...[
                   _buildSectionTitle('Billing Address'),
                   SizedBox(height: ScreenSize.spacingSmall),
                   _buildAddressCard(billingAddress, 'Billing'),
@@ -152,9 +166,10 @@ class OrderDetailsScreen extends StatelessWidget {
           );
         },
       ),
+      ),
     );
   }
-  
+
   Widget _buildOrderHeaderCard(Map<String, dynamic> order, String status) {
     return Container(
       padding: EdgeInsets.all(ScreenSize.spacingLarge),
@@ -248,7 +263,10 @@ class OrderDetailsScreen extends StatelessWidget {
     );
   }
   
-  Widget _buildOrderItems(List items) {
+  Widget _buildOrderItems(List items, ProfileController controller, Map<String, dynamic> order) {
+    final paymentStatus = (order['payment_status'] ?? '').toString().toLowerCase();
+    final isOrderPaid = paymentStatus == 'paid';
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
@@ -260,7 +278,13 @@ class OrderDetailsScreen extends StatelessWidget {
           final index = entry.key;
           final item = entry.value as Map<String, dynamic>;
           final isLast = index == items.length - 1;
-          
+          final isDigital = item['is_digital'] == true || item['is_digital'] == 1;
+          // Download button only for digital products and only after payment
+          final showDownload = isDigital && isOrderPaid;
+          if (showDownload) {
+            debugPrint('[OrderDetails] Payment success – showing download option for digital item id=${item['id']}');
+          }
+
           return Container(
             padding: EdgeInsets.all(ScreenSize.spacingMedium),
             decoration: BoxDecoration(
@@ -274,24 +298,7 @@ class OrderDetailsScreen extends StatelessWidget {
                 // Product Image
                 ClipRRect(
                   borderRadius: BorderRadius.circular(ScreenSize.inputBorderRadius),
-                  child: CachedNetworkImage(
-                    imageUrl: item['image'] ?? '',
-                    width: ScreenSize.widthPercent(12),
-                    height: ScreenSize.widthPercent(12),
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      width: ScreenSize.widthPercent(12),
-                      height: ScreenSize.widthPercent(12),
-                      color: AppColors.backgroundGrey,
-                      child: Icon(Icons.image, color: AppColors.textSecondary, size: ScreenSize.iconMedium),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      width: ScreenSize.widthPercent(12),
-                      height: ScreenSize.widthPercent(12),
-                      color: AppColors.backgroundGrey,
-                      child: Icon(Icons.image, color: AppColors.textSecondary, size: ScreenSize.iconMedium),
-                    ),
-                  ),
+                  child: _orderItemImage(item['image'], ScreenSize.widthPercent(12)),
                 ),
                 SizedBox(width: ScreenSize.spacingMedium),
                 
@@ -318,6 +325,39 @@ class OrderDetailsScreen extends StatelessWidget {
                           color: AppColors.textSecondary,
                         ),
                       ),
+                      if (isDigital) ...[
+                        SizedBox(height: ScreenSize.spacingSmall),
+                        if (showDownload)
+                          OutlinedButton.icon(
+                            onPressed: () => _downloadDigitalProduct(
+                              controller,
+                              item['id'] as int,
+                              (item['product_name'] ?? 'Digital file').toString(),
+                            ),
+                            icon: Icon(Icons.download, size: ScreenSize.iconSmall, color: AppColors.primary),
+                            label: Text(
+                              'Download (save to device – lifetime)',
+                              style: TextStyle(fontSize: ScreenSize.textSmall, color: AppColors.primary),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: ScreenSize.spacingSmall,
+                                vertical: ScreenSize.spacingExtraSmall,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          )
+                        else
+                          Text(
+                            'Lifetime download (MP3/MP4) available after payment',
+                            style: TextStyle(
+                              fontSize: ScreenSize.textSmall,
+                              color: AppColors.textSecondary,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -338,7 +378,78 @@ class OrderDetailsScreen extends StatelessWidget {
       ),
     );
   }
-  
+
+  /// User-friendly location from full path (e.g. DigitalDownloads/Filename.mp4).
+  static String _downloadLocationMessage(String savePath) {
+    const folder = 'DigitalDownloads';
+    final idx = savePath.indexOf(folder);
+    if (idx >= 0 && idx + folder.length <= savePath.length) {
+      final after = savePath.substring(idx);
+      return after.replaceAll(r'\', '/');
+    }
+    final segments = savePath.replaceAll(r'\', '/').split('/');
+    if (segments.length >= 2) {
+      return '${segments[segments.length - 2]}/${segments.last}';
+    }
+    return segments.isNotEmpty ? segments.last : savePath;
+  }
+
+  Future<void> _downloadDigitalProduct(ProfileController controller, int orderItemId, String productName) async {
+    try {
+      debugPrint('[OrderDetails] Download started for orderItemId=$orderItemId (lifetime save to device)');
+      final savePath = await controller.downloadDigitalProductToDevice(orderItemId, productName);
+      if (savePath != null && savePath.isNotEmpty) {
+        final location = _downloadLocationMessage(savePath);
+        Get.snackbar(
+          'Download complete',
+          'Saved at: $location\nLifetime access – open from app storage anytime.',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: AppColors.success,
+          colorText: AppColors.textWhite,
+          duration: const Duration(seconds: 5),
+          margin: const EdgeInsets.all(12),
+        );
+      }
+    } catch (e) {
+      debugPrint('[OrderDetails] Download to device failed: $e');
+      // Fallback: open URL in browser so user can still download
+      final url = await controller.getDigitalDownloadUrl(orderItemId);
+      if (url != null && url.isNotEmpty) {
+        try {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+            Get.snackbar('Opened in browser', 'You can download from there.', snackPosition: SnackPosition.BOTTOM);
+          }
+        } catch (_) {
+          Get.snackbar('Error', 'Failed to download: $e');
+        }
+      } else {
+        Get.snackbar('Error', 'Failed to download: $e');
+      }
+    }
+  }
+
+  Widget _orderItemImage(dynamic image, double size) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image, color: AppColors.textSecondary, size: ScreenSize.iconMedium),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image, color: AppColors.textSecondary, size: ScreenSize.iconMedium)),
+      errorWidget: (context, u, e) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image, color: AppColors.textSecondary, size: ScreenSize.iconMedium)),
+    );
+  }
+
   Widget _buildAddressCard(Map<String, dynamic> address, String type) {
     return Container(
       padding: EdgeInsets.all(ScreenSize.spacingLarge),

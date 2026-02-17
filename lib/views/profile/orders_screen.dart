@@ -170,6 +170,38 @@ class OrdersScreen extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                if (order['has_digital'] == true) ...[
+                                  SizedBox(height: ScreenSize.spacingExtraSmall),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: ScreenSize.spacingSmall,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
+                                      border: Border.all(
+                                        color: AppColors.primary.withOpacity(0.4),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.download, size: 12, color: AppColors.primary),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Digital',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -303,6 +335,27 @@ class OrdersScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(width: ScreenSize.spacingSmall),
+                    // Download button: only for digital products and only after payment
+                    if (order['has_digital'] == true &&
+                        (order['payment_status'] ?? '').toString().toLowerCase() == 'paid')
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => controller.viewOrderDetails(order['id']),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.textWhite,
+                            padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
+                            ),
+                          ),
+                          icon: Icon(Icons.download, size: ScreenSize.iconSmall),
+                          label: Text('Download', style: TextStyle(fontSize: ScreenSize.textMedium)),
+                        ),
+                      ),
+                    if (order['has_digital'] == true &&
+                        (order['payment_status'] ?? '').toString().toLowerCase() == 'paid')
+                      SizedBox(width: ScreenSize.spacingSmall),
                     if (status != 'cancelled' && status != 'pending')
                       Expanded(
                         child: OutlinedButton.icon(
@@ -417,24 +470,7 @@ class OrdersScreen extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-          child: CachedNetworkImage(
-            imageUrl: item['image'] ?? '',
-            width: imageSize,
-            height: imageSize,
-            fit: BoxFit.cover,
-            placeholder: (context, url) => Container(
-              width: imageSize,
-              height: imageSize,
-              color: AppColors.backgroundGrey,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            errorWidget: (context, url, error) => Container(
-              width: imageSize,
-              height: imageSize,
-              color: AppColors.backgroundGrey,
-              child: Icon(Icons.image_not_supported, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
-            ),
-          ),
+          child: _orderPreviewImage(item['image'], imageSize),
         ),
         SizedBox(width: ScreenSize.spacingMedium),
         Expanded(
@@ -465,7 +501,27 @@ class OrdersScreen extends StatelessWidget {
       ],
     );
   }
-  
+
+  Widget _orderPreviewImage(dynamic image, double imageSize) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: imageSize,
+        height: imageSize,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_not_supported, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: imageSize,
+      height: imageSize,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: imageSize, height: imageSize, color: AppColors.backgroundGrey, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+      errorWidget: (context, u, e) => Container(width: imageSize, height: imageSize, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, color: AppColors.textTertiary, size: ScreenSize.iconMedium)),
+    );
+  }
+
   Widget _buildDetailRow(String label, String value, {bool isTotal = false}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -19,6 +19,8 @@ class ApiEndpoints {
   static const String orderTracking = 'orders/tracking.php';
   static const String orderReorder = 'orders/reorder.php';
   static const String orderInvoice = 'orders/invoice.php';
+  static const String orderDownload = 'orders/download.php';
+  static const String orderHasPurchased = 'orders/has_purchased.php';
   static const String orderCancel = 'orders/cancel.php';
   static const String orderReturn = 'orders/return.php';
   
@@ -64,7 +66,9 @@ class ApiEndpoints {
   static const String newArrivals = 'products/new-arrivals.php';
   static const String discountedProducts = 'products/discounted.php';
   static const String topRatedProducts = 'products/top-rated.php';
-  
+  static const String digitalProducts = 'products/digital.php';
+  static const String digitalPreview = 'products/digital_preview.php';
+
   // Banners
   static const String bannersList = 'banners/list.php';
   

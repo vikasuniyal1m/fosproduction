@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/api_service.dart';
@@ -27,7 +28,8 @@ class HomeController extends GetxController {
   final RxList<Map<String, dynamic>> products = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> discountedProducts = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> topRatedProducts = <Map<String, dynamic>>[].obs;
-  
+  final RxList<Map<String, dynamic>> digitalProducts = <Map<String, dynamic>>[].obs;
+
   // Sort options
   final RxString featuredSortBy = 'default'.obs; // default, price_low, price_high, rating, newest
   final RxString discountedSortBy = 'popular'.obs; // popular, price_low, price_high, rating, discount_high
@@ -93,6 +95,7 @@ class HomeController extends GetxController {
         loadFeaturedProducts(),
         loadDiscountedProducts(),
         loadTopRatedProducts(),
+        loadDigitalProducts(),
         // Load products last as it might be heavy
         loadProducts(),
       ], eagerError: false); // Don't stop on first error, continue loading others
@@ -195,54 +198,54 @@ class HomeController extends GetxController {
     showLocationSelectionDialog();
   }
   
-  /// Use current location
+  /// Use current location (navigate to add-address so user can save it)
   Future<void> useCurrentLocation() async {
     Get.back(); // Close dialog
-    
-    // Navigate to add address screen with current location option
-    Get.toNamed('/add-address', arguments: {'use_current_location': true})?.then((_) {
-      // Reload location after returning
-      loadUserLocation();
-    });
+    final result = await Get.toNamed('/add-address', arguments: {'use_current_location': true});
+    // Reload location so home page shows updated address
+    await loadUserLocation();
+    if (result == true) {
+      Get.snackbar('Done', 'Address saved. You can use it for delivery.', snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+    }
   }
   
-  /// Get current location and set as selected
+  /// Get current location and set as selected (for home page display)
   Future<void> detectAndSetCurrentLocation() async {
+    Get.dialog(
+      const Center(child: CircularProgressIndicator()),
+      barrierDismissible: false,
+    );
     try {
       final locationService = LocationService();
-      
-      // Request permission first
-      final permissionStatus = await locationService
-          .requestLocationPermission();
-
-      if (permissionStatus != PermissionStatus.granted) {
-        return; // Permission denied, user will see snackbar
-      }
-      
-      // Show loading
-      Get.dialog(
-        Center(child: CircularProgressIndicator()),
-        barrierDismissible: false,
+      final permission = await locationService.requestLocationPermission().timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => LocationPermission.denied,
       );
-      
-      // Get current location
-      final locationData = await locationService.getCurrentLocation();
-      
+      final isGranted = permission == LocationPermission.whileInUse || permission == LocationPermission.always;
+
+      if (!isGranted) {
+        Get.back(); // Close loading dialog
+        return; // Snackbar already shown by LocationService
+      }
+
+      await Future.delayed(const Duration(milliseconds: 400));
+      final locationData = await locationService.getCurrentLocation().timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          Get.snackbar('Location Timeout', 'Could not get location in time. Please try again.', snackPosition: SnackPosition.BOTTOM);
+          return null;
+        },
+      );
+
       Get.back(); // Close loading dialog
-      
+
       if (locationData != null) {
-        // Set as selected location (temporary, not saved to database)
         selectedLocation.value = locationData;
-        
-        Get.snackbar(
-          'Success',
-          'Current location detected!',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        Get.snackbar('Success', 'Current location detected!', snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
-      Get.back(); // Close loading dialog if still open
-      Get.snackbar('Error', 'Failed to detect location: ${e.toString()}');
+      if (Get.isDialogOpen == true) Get.back();
+      Get.snackbar('Error', 'Failed to detect location: ${e.toString()}', snackPosition: SnackPosition.BOTTOM);
     }
   }
   
@@ -356,6 +359,21 @@ class HomeController extends GetxController {
     }
   }
   
+  /// Load digital products only (instant download after payment)
+  Future<void> loadDigitalProducts() async {
+    try {
+      final response = await _apiService.get(
+        ApiEndpoints.digitalProducts,
+        queryParameters: {'limit': '20'},
+      );
+      final data = ApiService.handleResponse(response);
+      final productsList = data['products'] ?? [];
+      digitalProducts.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+    } catch (e) {
+      digitalProducts.value = [];
+    }
+  }
+
   /// Load all products
   Future<void> loadProducts() async {
     try {
@@ -444,6 +462,8 @@ class HomeController extends GetxController {
       'isFavorite': _checkWishlistStatus(product['id']),
       'category': product['category'] ?? {},
       'discount_percent': product['discount_percent'] ?? null,
+      'is_digital': product['is_digital'] == true,
+      'media_type': product['media_type']?.toString(),
     };
   }
   
@@ -624,6 +644,12 @@ class HomeController extends GetxController {
           topRatedProducts[topRatedIndex]['isFavorite'] = isNowInWishlist;
           topRatedProducts.refresh();
         }
+        // Update in digital products
+        final digitalIndex = digitalProducts.indexWhere((p) => p['id'] == productId);
+        if (digitalIndex != -1) {
+          digitalProducts[digitalIndex]['isFavorite'] = isNowInWishlist;
+          digitalProducts.refresh();
+        }
 
         // Defer refresh calls to after the current build cycle
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -631,6 +657,7 @@ class HomeController extends GetxController {
           if (productIndex != -1) products.refresh();
           if (discountedIndex != -1) discountedProducts.refresh();
           if (topRatedIndex != -1) topRatedProducts.refresh();
+          if (digitalIndex != -1) digitalProducts.refresh();
         });
 
         // Show feedback

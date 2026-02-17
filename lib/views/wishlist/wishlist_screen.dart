@@ -158,33 +158,7 @@ class WishlistScreen extends StatelessWidget {
                 topLeft: Radius.circular(ScreenSize.tileBorderRadius),
                 bottomLeft: Radius.circular(ScreenSize.tileBorderRadius),
               ),
-              child: CachedNetworkImage(
-                imageUrl: item['image'] ?? '',
-                width: ScreenSize.productCardHorizontalImageHeight,
-                height: ScreenSize.productCardHorizontalImageHeight,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  width: ScreenSize.productCardHorizontalImageHeight,
-                  height: ScreenSize.productCardHorizontalImageHeight,
-                  color: AppColors.backgroundGrey,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                    ),
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  width: ScreenSize.productCardHorizontalImageHeight,
-                  height: ScreenSize.productCardHorizontalImageHeight,
-                  color: AppColors.backgroundGrey,
-                  child: Icon(
-                    Icons.image_not_supported,
-                    size: ScreenSize.iconLarge,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ),
+              child: _wishlistItemImage(item['image'], ScreenSize.productCardHorizontalImageHeight),
             ),
           ),
           
@@ -332,6 +306,26 @@ class WishlistScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _wishlistItemImage(dynamic image, double size) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_not_supported, size: ScreenSize.iconLarge, color: AppColors.textTertiary),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Center(child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary)))),
+      errorWidget: (context, u, e) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, size: ScreenSize.iconLarge, color: AppColors.textTertiary)),
     );
   }
 }

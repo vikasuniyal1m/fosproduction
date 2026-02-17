@@ -5,6 +5,7 @@ import '../services/api_endpoints.dart';
 import '../utils/app_colors.dart';
 import '../utils/cache_manager.dart';
 import '../routes/app_routes.dart';
+import '../views/payment/digital_pay_redirect_screen.dart';
 import '../widgets/add_to_cart_success_sheet.dart';
 import '../widgets/review_dialog.dart';
 import 'cart_controller.dart';
@@ -24,7 +25,19 @@ class ProductController extends GetxController {
   Map<String, dynamic>? product;
   final RxList<Map<String, dynamic>> reviews = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> relatedProducts = <Map<String, dynamic>>[].obs;
-  
+
+  /// Digital product: has user paid for this product (lifetime download access)?
+  final RxBool digitalHasPurchased = false.obs;
+  /// When has_purchased, order_item_id for download API (so user can download from product details).
+  final Rxn<int> digitalOrderItemId = Rxn<int>();
+  /// Digital product: preview URL for 5–10 sec listen/watch (no auth required).
+  final RxString digitalPreviewUrl = ''.obs;
+  /// Preview duration in seconds (e.g. 10).
+  final RxInt digitalPreviewDurationSeconds = 10.obs;
+  /// 'video' or 'audio' for in-app preview player.
+  final RxString digitalPreviewMediaType = 'video'.obs;
+  final RxBool digitalPreviewLoading = false.obs;
+
   @override
   void onInit() {
     super.onInit();
@@ -119,11 +132,14 @@ class ProductController extends GetxController {
         'images': imageUrls.isNotEmpty ? imageUrls : [data['image'] != null ? _getImageUrl(data['image'].toString()) : ''],
         'sizes': sizes,
         'colors': colors,
-        'inStock': data['in_stock'] ?? (data['stock_quantity'] != null && (int.tryParse(data['stock_quantity'].toString()) ?? 0) > 0),
+        'inStock': data['is_digital'] == true
+            ? true
+            : (data['in_stock'] ?? (data['stock_quantity'] != null && (int.tryParse(data['stock_quantity'].toString()) ?? 0) > 0)),
         'stock': int.tryParse(data['stock_quantity']?.toString() ?? '0') ?? 0,
         'category_id': data['category'] != null && data['category'] is Map 
             ? data['category']['id'] 
             : data['category_id'],
+        'is_digital': data['is_digital'] == true || data['is_digital'] == 1,
       };
       
       // Check if product is in wishlist
@@ -136,20 +152,86 @@ class ProductController extends GetxController {
       if (data['category_id'] != null) {
         await loadRelatedProducts(data['category_id'], productId);
       }
+
+      // Digital product: load has_purchased and preview URL; quantity always 1
+      if (product!['is_digital'] == true) {
+        quantity.value = 1;
+        digitalPreviewUrl.value = '';
+        digitalHasPurchased.value = false;
+        digitalPreviewDurationSeconds.value = 15;
+        await _loadDigitalPreviewAndPurchaseStatus(productId);
+      }
     } catch (e) {
       ApiService.showErrorSnackbar(e);
     } finally {
       isLoading.value = false;
     }
   }
-  
+
+  /// Refresh has_purchased for current digital product (e.g. after payment so "You own this" dikhe).
+  Future<void> refreshDigitalPurchaseStatus() async {
+    if (product == null || product!['is_digital'] != true) return;
+    final productId = product!['id'] is int ? product!['id'] as int : int.tryParse(product!['id'].toString());
+    if (productId == null || productId <= 0) return;
+    await _loadDigitalPreviewAndPurchaseStatus(productId);
+  }
+
+  /// Load preview URL (anyone) and has_purchased (if logged in) for digital product.
+  Future<void> _loadDigitalPreviewAndPurchaseStatus(int productId) async {
+    print('[DigitalPreview] _loadDigitalPreviewAndPurchaseStatus productId=$productId');
+    digitalPreviewLoading.value = true;
+    try {
+      final previewResponse = await _apiService.get(
+        ApiEndpoints.digitalPreview,
+        queryParameters: {'product_id': productId.toString()},
+      );
+      final previewData = ApiService.handleResponse(previewResponse);
+      final rawUrl = previewData['preview_url']?.toString() ?? '';
+      digitalPreviewUrl.value = _normalizePreviewUrl(rawUrl);
+      digitalPreviewDurationSeconds.value =
+          int.tryParse(previewData['preview_duration_seconds']?.toString() ?? '') ?? 15;
+      digitalPreviewMediaType.value =
+          (previewData['media_type']?.toString() == 'audio') ? 'audio' : 'video';
+      print('[DigitalPreview] preview_url=${digitalPreviewUrl.value} mediaType=${digitalPreviewMediaType.value} duration=${digitalPreviewDurationSeconds.value}');
+
+      final token = CacheManager.getUserToken();
+      if (token != null && token.isNotEmpty) {
+        final purchasedResponse = await _apiService.get(
+          ApiEndpoints.orderHasPurchased,
+          queryParameters: {'product_id': productId.toString()},
+        );
+        final purchasedData = ApiService.handleResponse(purchasedResponse);
+        digitalHasPurchased.value = purchasedData['has_purchased'] == true;
+        final oid = purchasedData['order_item_id'];
+        digitalOrderItemId.value = (oid is int) ? oid : (oid != null ? int.tryParse(oid.toString()) : null);
+      } else {
+        digitalHasPurchased.value = false;
+        digitalOrderItemId.value = null;
+      }
+    } catch (e, st) {
+      print('[DigitalPreview] _loadDigitalPreviewAndPurchaseStatus ERROR: $e');
+      print('[DigitalPreview] stackTrace: $st');
+      digitalPreviewUrl.value = '';
+      digitalHasPurchased.value = false;
+      digitalOrderItemId.value = null;
+    } finally {
+      digitalPreviewLoading.value = false;
+    }
+  }
+
   /// Get full image URL
   String _getImageUrl(String imagePath) {
     if (imagePath.isEmpty) return '';
     if (imagePath.startsWith('http')) return imagePath;
     return '${ApiService.imageBaseUrl}$imagePath';
   }
-  
+
+  /// Fix preview URL when backend returns base + path without slash (e.g. comapi -> com/api).
+  String _normalizePreviewUrl(String url) {
+    if (url.isEmpty) return url;
+    return url.replaceFirst('.comapi', '.com/api');
+  }
+
   /// Load reviews
   Future<void> loadReviews(int productId) async {
     try {
@@ -462,10 +544,11 @@ class ProductController extends GetxController {
         }
       }
       
-      // Add to cart
+      // Add to cart (digital = always 1)
+      final qty = product!['is_digital'] == true ? 1 : quantity.value;
       final success = await cartController.addToCart(
         productId: product!['id'],
-        quantity: quantity.value,
+        quantity: qty,
         size: size,
         color: color,
       );
@@ -489,7 +572,7 @@ class ProductController extends GetxController {
               'price': product!['price'] ?? 0,
               'sale_price': product!['sale_price'] ?? product!['price'] ?? 0,
             },
-            quantity: quantity.value,
+            quantity: qty,
           ),
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
@@ -556,10 +639,11 @@ class ProductController extends GetxController {
       }
     }
     
-    // Add to cart first
+    // Add to cart first (digital = always 1)
+    final qty = product!['is_digital'] == true ? 1 : quantity.value;
     final success = await cartController.addToCart(
       productId: product!['id'],
-      quantity: quantity.value,
+      quantity: qty,
       size: size,
       color: color,
     );
@@ -569,7 +653,36 @@ class ProductController extends GetxController {
       cartController.navigateToCheckout();
     }
   }
-  
+
+  /// From preview "Pay & Download": cart = only this product, go to checkout → Stripe. No address needed (digital-only).
+  Future<void> goToPayDigitalProduct() async {
+    if (product == null) return;
+    if (!CacheManager.isLoggedIn()) {
+      Get.snackbar('Login Required', 'Please login to proceed with payment');
+      await Future.delayed(const Duration(milliseconds: 500));
+      AppRoutes.toLogin();
+      return;
+    }
+    CartController cartController;
+    if (Get.isRegistered<CartController>()) {
+      cartController = Get.find<CartController>();
+    } else {
+      cartController = Get.put(CartController());
+    }
+    await cartController.clearCart();
+    final success = await cartController.addToCart(
+      productId: product!['id'],
+      quantity: 1,
+      size: null,
+      color: null,
+    );
+    if (success) {
+      Get.to(() => const DigitalPayRedirectScreen(), arguments: {'digital_quick_pay': true});
+    } else {
+      Get.snackbar('Error', 'Could not add product. Please try again.');
+    }
+  }
+
   /// Write review - Shows review dialog
   void writeReview() {
     if (product == null) {

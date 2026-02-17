@@ -36,9 +36,11 @@ class LocationService {
   /// Request location permission from the user.
   /// Handles different permission states like granted, denied, and permanently denied.
   Future<LocationPermission> requestLocationPermission() async {
-    // 1. Check if location services are enabled on the device.
+    debugPrint('[LocationService] requestLocationPermission - checking if location service enabled');
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    debugPrint('[LocationService] isLocationServiceEnabled: $serviceEnabled');
     if (!serviceEnabled) {
+      debugPrint('[LocationService] Location service DISABLED - showing snackbar');
       Get.snackbar(
         'Location Disabled',
         'Please enable location services (GPS) on your device to proceed.',
@@ -49,13 +51,16 @@ class LocationService {
       return LocationPermission.denied;
     }
 
-    // 2. Check the current permission status.
+    debugPrint('[LocationService] Checking current permission...');
     LocationPermission permission = await checkLocationPermission();
+    debugPrint('[LocationService] Current permission: $permission');
 
-    // 3. Handle based on status.
     if (permission == LocationPermission.denied) {
+      debugPrint('[LocationService] Permission denied - requesting...');
       permission = await Geolocator.requestPermission();
+      debugPrint('[LocationService] After request: $permission');
       if (permission == LocationPermission.denied) {
+        debugPrint('[LocationService] User denied permission');
         Get.snackbar(
           'Permission Denied',
           'Location permission is required to detect your address automatically.',
@@ -68,7 +73,7 @@ class LocationService {
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // User has permanently denied, show a dialog to open settings.
+      debugPrint('[LocationService] Permission deniedForever - showing settings dialog');
       await Get.dialog(
         AlertDialog(
           title: const Text('Location Permission Required'),
@@ -94,30 +99,37 @@ class LocationService {
           ],
         ),
       );
-      return await checkLocationPermission();
+      permission = await checkLocationPermission();
+      debugPrint('[LocationService] After settings dialog permission: $permission');
+      return permission;
     }
 
+    debugPrint('[LocationService] requestLocationPermission - returning granted: $permission');
     return permission;
   }
 
   /// Get current location. Assumes permission has already been granted.
   Future<Map<String, dynamic>?> getCurrentLocation() async {
+    debugPrint('[LocationService] getCurrentLocation ENTRY');
+    debugPrint('[LocationService] getCurrentLocation - calling Geolocator.getCurrentPosition (timeLimit 15s)...');
     try {
-      // Get current position with a timeout.
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 15),
       );
+      debugPrint('[LocationService] Position received: lat=${position.latitude}, lon=${position.longitude}');
 
-      // Reverse geocode to get address details.
+      debugPrint('[LocationService] Reverse geocoding...');
       List<Placemark> placemarks = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
       );
+      debugPrint('[LocationService] placemarkFromCoordinates returned ${placemarks.length} placemarks');
 
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
-        
+        debugPrint('[LocationService] First place: name=${place.name}, street=${place.street}, locality=${place.locality}, administrativeArea=${place.administrativeArea}, postalCode=${place.postalCode}');
+
         String addressLine1 = '';
         if (place.street != null && place.street!.isNotEmpty) {
           addressLine1 = place.street!;
@@ -128,7 +140,7 @@ class LocationService {
           addressLine1 = place.subThoroughfare!;
         }
 
-        return {
+        final result = {
           'latitude': position.latitude,
           'longitude': position.longitude,
           'address_line1': addressLine1.isNotEmpty ? addressLine1 : (place.name ?? 'Unknown Location'),
@@ -138,9 +150,11 @@ class LocationService {
           'pincode': place.postalCode ?? '',
           'country': place.country ?? '',
         };
+        debugPrint('[LocationService] getCurrentLocation SUCCESS - returning address map');
+        return result;
       }
 
-      // Fallback if geocoding fails.
+      debugPrint('[LocationService] placemarks empty - returning fallback lat/lon only');
       return {
         'latitude': position.latitude,
         'longitude': position.longitude,
@@ -149,19 +163,21 @@ class LocationService {
       };
 
     } on TimeoutException {
+      debugPrint('[LocationService] getCurrentLocation TIMEOUT - Geolocator.getCurrentPosition took > 15s');
       Get.snackbar(
         'Location Timeout',
         'Could not get location in time. Please check your GPS signal and try again.',
         snackPosition: SnackPosition.BOTTOM,
       );
       return null;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[LocationService] getCurrentLocation ERROR: $e');
+      debugPrint('[LocationService] stackTrace: $stack');
       Get.snackbar(
         'Location Error',
         'Failed to get location. Please ensure GPS is enabled and try again.',
         snackPosition: SnackPosition.BOTTOM,
       );
-      print('Error in getCurrentLocation: $e');
       return null;
     }
   }

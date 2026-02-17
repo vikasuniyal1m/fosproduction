@@ -624,18 +624,7 @@ class _PaymentGatewayScreenState extends State<PaymentGatewayScreen> {
                 color: AppColors.backgroundGrey,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Image.network(
-                item['image'] ?? '',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: AppColors.backgroundGrey,
-                  child: Icon(
-                    Icons.image_outlined,
-                    color: AppColors.textTertiary,
-                    size: ScreenSize.iconMedium,
-                  ),
-                ),
-              ),
+              child: _buildOrderItemImage((item['image'] ?? '').toString().trim()),
             ),
           ),
           SizedBox(width: ScreenSize.spacingMedium),
@@ -718,6 +707,26 @@ class _PaymentGatewayScreenState extends State<PaymentGatewayScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOrderItemImage(String imageUrl) {
+    final size = ScreenSize.iconLarge * 1.8;
+    if (imageUrl.isEmpty) {
+      return Container(
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_outlined, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
+      );
+    }
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      width: size,
+      height: size,
+      errorBuilder: (context, error, stackTrace) => Container(
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_outlined, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
       ),
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../utils/screen_size.dart';
 import '../utils/app_colors.dart';
 import '../controllers/home_controller.dart';
@@ -174,13 +174,14 @@ class LocationSelectionDialog extends StatelessWidget {
         onTap: () async {
           // Request permission and detect location
           final locationService = LocationService();
-          final permissionStatus = await locationService.requestLocationPermission();
-          
-          if (permissionStatus == PermissionStatus.granted) {
+          final permission = await locationService.requestLocationPermission();
+          final isGranted = permission == LocationPermission.whileInUse || permission == LocationPermission.always;
+
+          if (isGranted) {
             // Get current location
             Get.back(); // Close dialog first
             await controller.detectAndSetCurrentLocation();
-          } else if (permissionStatus == PermissionStatus.permanentlyDenied) {
+          } else if (permission == LocationPermission.deniedForever) {
             // Show message to open settings
             Get.snackbar(
               'Permission Required',
