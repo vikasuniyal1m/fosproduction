@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
 import '../utils/app_colors.dart';
+import '../utils/product_details_navigation.dart';
 import 'wishlist_controller.dart';
 
 /// Search Controller
@@ -249,7 +250,9 @@ class SearchController extends GetxController {
     }
     
     if (!loadMore) {
-      isLoading.value = true;
+      if (searchResults.isEmpty) {
+        isLoading.value = true;
+      }
       currentPage.value = 1;
     }
     
@@ -345,7 +348,18 @@ class SearchController extends GetxController {
       'isFavorite': _checkWishlistStatus(product['id']),
       'category': product['category'] ?? {},
       'in_stock': product['in_stock'] ?? false,
+      'is_digital': product['is_digital'] == true,
+      'media_type': product['media_type']?.toString(),
     };
+    
+    // Debug print to check formatted data
+    print('=== SearchController._formatProduct ===');
+    print('Product ID: ${product['id']}');
+    print('Original is_digital: ${product['is_digital']} (type: ${product['is_digital'].runtimeType})');
+    print('Original media_type: ${product['media_type']} (type: ${product['media_type'].runtimeType})');
+    print('Formatted is_digital: ${product['is_digital'] == true}');
+    print('Formatted media_type: ${product['media_type']?.toString()}');
+    print('===================================');
   }
   
   /// Get full image URL
@@ -485,13 +499,23 @@ class SearchController extends GetxController {
   }
   
   /// Navigate to product details
-  void navigateToProductDetails(dynamic productId) {
-    final id = productId is int ? productId : int.tryParse(productId.toString()) ?? 0;
-    if (id > 0) {
-      Get.toNamed('/product-details', arguments: id);
-    } else {
+  void navigateToProductDetails(
+    dynamic productId, {
+    Map<String, dynamic>? preview,
+  }) {
+    final id = productId is int
+        ? productId
+        : int.tryParse(productId.toString()) ?? 0;
+    if (id <= 0) {
       Get.snackbar('Error', 'Invalid product ID');
+      return;
     }
+    final item = preview ??
+        searchResults.firstWhereOrNull((p) => p['id'] == id);
+    ProductDetailsNavigation.go(
+      id: id,
+      preview: item != null ? Map<String, dynamic>.from(item) : null,
+    );
   }
   
   /// Load more results

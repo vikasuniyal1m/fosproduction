@@ -1,0 +1,18 @@
+# Not part of the Flutter mobile app — speeds up tooling / avoids accidental scans
+admin/
+fruitswatchfaceinte/
+node_modules/
+*.zip
+lib.zip
+lib 2.zip
+modelfile
+build/
+.dart_tool/
+plugins/**/.gradle/
+plugins/**/build/
+android/.gradle/
+ios/Pods/
+ios/build/
+macos/Pods/
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/

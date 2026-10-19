@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart' as cache;
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
 import '../services/location_service.dart';
@@ -11,6 +13,7 @@ import '../utils/screen_size.dart';
 import '../utils/app_colors.dart';
 import '../utils/cache_manager.dart';
 import '../routes/app_routes.dart';
+import '../utils/product_details_navigation.dart';
 import 'wishlist_controller.dart';
 import 'notification_controller.dart';
 
@@ -20,6 +23,8 @@ class HomeController extends GetxController {
   final RxInt currentBannerIndex = 0.obs;
   final RxInt selectedCategoryIndex = 0.obs;
   final RxBool isLoading = false.obs;
+  /// Set after first successful/cached load — avoids full-page spinner on return.
+  final RxBool hasEverLoaded = false.obs;
   final ApiService _apiService = ApiService();
   
   final RxList<Map<String, dynamic>> categories = <Map<String, dynamic>>[].obs;
@@ -30,18 +35,196 @@ class HomeController extends GetxController {
   final RxList<Map<String, dynamic>> topRatedProducts = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> digitalProducts = <Map<String, dynamic>>[].obs;
 
+  // Category-specific product lists for home showcases
+  final RxList<Map<String, dynamic>> homeDecorProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> healthProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> stationeryProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> collectiblesProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> cartoonLineProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> stickerProducts = <Map<String, dynamic>>[].obs;
+  
+  // New section lists for more content
+  final RxList<Map<String, dynamic>> newArrivalsProducts = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> budgetProducts = <Map<String, dynamic>>[].obs; // Under $50
+  final RxList<Map<String, dynamic>> mediaShowcaseProducts = <Map<String, dynamic>>[].obs; // Audio/Video
+
+  // Recently viewed products (local tracking)
+  final RxList<Map<String, dynamic>> recentlyViewed = <Map<String, dynamic>>[].obs;
+  
+  // Real-time counts for UI
+  final RxInt activeOrdersCount = 0.obs;
+  final RxInt referralCount = 0.obs;
+
   // Sort options
-  final RxString featuredSortBy = 'default'.obs; // default, price_low, price_high, rating, newest
-  final RxString discountedSortBy = 'popular'.obs; // popular, price_low, price_high, rating, discount_high
-  final RxString topRatedSortBy = 'popular'.obs; // popular, price_low, price_high, rating, newest
+  final RxString featuredSortBy = 'default'.obs;
+  final RxString discountedSortBy = 'popular'.obs;
+  final RxString topRatedSortBy = 'popular'.obs;
   
   // Location/Address management
   final RxList<Map<String, dynamic>> addresses = <Map<String, dynamic>>[].obs;
   final Rxn<Map<String, dynamic>> selectedLocation = Rxn<Map<String, dynamic>>();
+
+  /// True when cached or loaded data can be shown (skip full-page spinner).
+  bool get hasDisplayableContent =>
+      categories.isNotEmpty ||
+      banners.isNotEmpty ||
+      featuredProducts.isNotEmpty ||
+      products.isNotEmpty ||
+      digitalProducts.isNotEmpty;
   
+  void _markLoadedIfNeeded() {
+    if (hasDisplayableContent) hasEverLoaded.value = true;
+  }
+
+  /// Load cached home page data to render instantly
+  void loadCachedData() {
+    try {
+      final cachedCategories = CacheManager.getData<List>('home_categories');
+      if (cachedCategories != null) {
+        categories.value = List<Map<String, dynamic>>.from(cachedCategories);
+      }
+
+      final cachedBanners = CacheManager.getData<List>('home_banners');
+      if (cachedBanners != null) {
+        banners.value = List<Map<String, dynamic>>.from(cachedBanners);
+      }
+
+      final cachedFeatured = CacheManager.getData<List>('home_featured_products');
+      if (cachedFeatured != null) {
+        featuredProducts.value = _normalizeCachedProducts(cachedFeatured);
+      }
+
+      final cachedProducts = CacheManager.getData<List>('home_products');
+      if (cachedProducts != null) {
+        products.value = _normalizeCachedProducts(cachedProducts);
+      }
+
+      final cachedDiscounted = CacheManager.getData<List>('home_discounted_products');
+      if (cachedDiscounted != null) {
+        discountedProducts.value = _normalizeCachedProducts(cachedDiscounted);
+      }
+
+      final cachedTopRated = CacheManager.getData<List>('home_top_rated_products');
+      if (cachedTopRated != null) {
+        topRatedProducts.value = _normalizeCachedProducts(cachedTopRated);
+      }
+
+      final cachedDigital = CacheManager.getData<List>('home_digital_products');
+      if (cachedDigital != null) {
+        digitalProducts.value = _normalizeCachedProducts(cachedDigital);
+      }
+
+      final cachedDecor = CacheManager.getData<List>('home_decor_products');
+      if (cachedDecor != null) {
+        homeDecorProducts.value = _normalizeCachedProducts(cachedDecor);
+      }
+
+      final cachedHealth = CacheManager.getData<List>('home_health_products');
+      if (cachedHealth != null) {
+        healthProducts.value = _normalizeCachedProducts(cachedHealth);
+      }
+
+      final cachedStationery = CacheManager.getData<List>('home_stationery_products');
+      if (cachedStationery != null) {
+        stationeryProducts.value = _normalizeCachedProducts(cachedStationery);
+      }
+
+      final cachedCollectibles = CacheManager.getData<List>('home_collectibles_products');
+      if (cachedCollectibles != null) {
+        collectiblesProducts.value = _normalizeCachedProducts(cachedCollectibles);
+      }
+
+      final cachedCartoonLine = CacheManager.getData<List>('home_cartoon_line_products');
+      if (cachedCartoonLine != null) {
+        cartoonLineProducts.value = _normalizeCachedProducts(cachedCartoonLine);
+      }
+
+      final cachedStickers = CacheManager.getData<List>('home_sticker_products');
+      if (cachedStickers != null) {
+        stickerProducts.value = _normalizeCachedProducts(cachedStickers);
+      }
+
+      final cachedNewArrivals = CacheManager.getData<List>('home_new_arrivals_products');
+      if (cachedNewArrivals != null) {
+        newArrivalsProducts.value = _normalizeCachedProducts(cachedNewArrivals);
+      }
+
+      final cachedBudget = CacheManager.getData<List>('home_budget_products');
+      if (cachedBudget != null) {
+        budgetProducts.value = _normalizeCachedProducts(cachedBudget);
+      }
+
+      final cachedMedia = CacheManager.getData<List>('home_media_showcase_products');
+      if (cachedMedia != null) {
+        mediaShowcaseProducts.value = _normalizeCachedProducts(cachedMedia);
+      }
+
+      final cachedRecentlyViewed = CacheManager.getData<List>('home_recently_viewed');
+      if (cachedRecentlyViewed != null) {
+        recentlyViewed.value = List<Map<String, dynamic>>.from(cachedRecentlyViewed);
+      }
+
+      activeOrdersCount.value = CacheManager.getData<int>('home_active_orders_count') ?? 0;
+      referralCount.value = CacheManager.getData<int>('home_referral_count') ?? 0;
+      rebuildMediaShowcase();
+      _markLoadedIfNeeded();
+    } catch (e) {
+      print('Error loading cached home data: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _normalizeCachedProducts(List source) {
+    return source.map<Map<String, dynamic>>((item) {
+      final map = Map<String, dynamic>.from(item as Map);
+      if (map['image'] is String) {
+        map['image'] = _getImageUrl(map['image'].toString());
+      }
+      if (map['banner'] is String) {
+        map['banner'] = _getImageUrl(map['banner'].toString());
+      }
+      return map;
+    }).toList();
+  }
+
+  /// Save current home page lists to cache
+  void saveAllToCache() {
+    try {
+      CacheManager.saveData('home_categories', categories.toList());
+      CacheManager.saveData('home_banners', banners.toList());
+      CacheManager.saveData('home_featured_products', featuredProducts.toList());
+      CacheManager.saveData('home_products', products.toList());
+      CacheManager.saveData('home_discounted_products', discountedProducts.toList());
+      CacheManager.saveData('home_top_rated_products', topRatedProducts.toList());
+      CacheManager.saveData('home_digital_products', digitalProducts.toList());
+      CacheManager.saveData('home_decor_products', homeDecorProducts.toList());
+      CacheManager.saveData('home_health_products', healthProducts.toList());
+      CacheManager.saveData('home_stationery_products', stationeryProducts.toList());
+      CacheManager.saveData('home_collectibles_products', collectiblesProducts.toList());
+      CacheManager.saveData('home_cartoon_line_products', cartoonLineProducts.toList());
+      CacheManager.saveData('home_sticker_products', stickerProducts.toList());
+      CacheManager.saveData('home_new_arrivals_products', newArrivalsProducts.toList());
+      CacheManager.saveData('home_budget_products', budgetProducts.toList());
+      CacheManager.saveData('home_media_showcase_products', mediaShowcaseProducts.toList());
+      CacheManager.saveData('home_recently_viewed', recentlyViewed.toList());
+      CacheManager.saveData('home_active_orders_count', activeOrdersCount.value);
+      CacheManager.saveData('home_referral_count', referralCount.value);
+    } catch (e) {
+      print('Error saving home data to cache: $e');
+    }
+  }
+
   @override
   void onInit() {
     super.onInit();
+    
+    // Initialize wishlist controller first to ensure isFavorite status is available
+    if (CacheManager.isLoggedIn() && !Get.isRegistered<WishlistController>()) {
+      Get.put(WishlistController());
+    }
+    
+    // Load cache immediately for instant smooth rendering
+    loadCachedData();
+    
     loadHomeData();
     loadUserLocation();
     _requestNotificationPermissionIfNeeded();
@@ -84,21 +267,54 @@ class HomeController extends GetxController {
   }
   
   /// Load all home screen data - OPTIMIZED: Load in parallel for faster performance
-  Future<void> loadHomeData() async {
-    isLoading.value = true;
-    update(); // Update GetBuilder if used
+  Future<void> loadHomeData({bool silent = false}) async {
+    if (!silent && !hasEverLoaded.value) {
+      isLoading.value = true;
+      update();
+    }
     try {
-      // Load all data in parallel instead of sequentially for much faster loading
-      await Future.wait([
+      // Prepare list of futures
+      List<Future> futures = [
         loadCategories(),
         loadBanners(),
         loadFeaturedProducts(),
         loadDiscountedProducts(),
         loadTopRatedProducts(),
         loadDigitalProducts(),
-        // Load products last as it might be heavy
         loadProducts(),
-      ], eagerError: false); // Don't stop on first error, continue loading others
+        // Category-specific sections
+        loadCategoryProducts(13, homeDecorProducts),   // Video
+        loadCategoryProducts(12, healthProducts),      // Audio
+        loadCategoryProducts(15, stationeryProducts),  // Sticker
+        loadCategoryProducts(13, collectiblesProducts), // Video
+        loadCategoryProducts(12, cartoonLineProducts),  // Audio
+        loadCategoryProducts(15, stickerProducts),       // Sticker
+        // New sections
+        loadNewArrivals(),
+        loadBudgetProducts(50.0),
+        // Load real-time counts
+        loadActiveOrdersCount(),
+        loadReferralCount(),
+      ];
+      
+      // Add wishlist loading if user is logged in
+      if (CacheManager.isLoggedIn()) {
+        if (Get.isRegistered<WishlistController>()) {
+          final wishlistController = Get.find<WishlistController>();
+          futures.add(wishlistController.loadWishlist());
+        } else {
+          final wishlistController = Get.put(WishlistController());
+          futures.add(wishlistController.loadWishlist());
+        }
+      }
+      
+      // Load all data in parallel instead of sequentially for much faster loading
+      await Future.wait(futures, eagerError: false);
+
+      rebuildMediaShowcase();
+
+      // Save loaded data to local cache
+      saveAllToCache();
     } catch (e) {
       // Log error but don't show snackbar immediately - let user see partial data
       print('Error loading home data: $e');
@@ -107,6 +323,7 @@ class HomeController extends GetxController {
         ApiService.showErrorSnackbar(e);
       }
     } finally {
+      _markLoadedIfNeeded();
       isLoading.value = false;
       update(); // Update GetBuilder if used
       print('Home data loading completed. Categories: ${categories.length}, Banners: ${banners.length}, Products: ${products.length}');
@@ -133,11 +350,11 @@ class HomeController extends GetxController {
         }
       } else {
         selectedLocation.value = null;
-        Get.snackbar(
-          'No Address',
-          'Please add a delivery address',
-          duration: Duration(seconds: 2),
-        );
+        // Get.snackbar(
+        //   'No Address',
+        //   'Please add a delivery address',
+        //   duration: Duration(seconds: 2),
+        // );
       }
     } catch (e) {
       // If addresses fail, set to null (no location)
@@ -205,7 +422,7 @@ class HomeController extends GetxController {
     // Reload location so home page shows updated address
     await loadUserLocation();
     if (result == true) {
-      Get.snackbar('Done', 'Address saved. You can use it for delivery.', snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+      // Get.snackbar('Done', 'Address saved. You can use it for delivery.', snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
     }
   }
   
@@ -232,7 +449,7 @@ class HomeController extends GetxController {
       final locationData = await locationService.getCurrentLocation().timeout(
         const Duration(seconds: 20),
         onTimeout: () {
-          Get.snackbar('Location Timeout', 'Could not get location in time. Please try again.', snackPosition: SnackPosition.BOTTOM);
+          // Get.snackbar('Location Timeout', 'Could not get location in time. Please try again.', snackPosition: SnackPosition.BOTTOM);
           return null;
         },
       );
@@ -241,11 +458,11 @@ class HomeController extends GetxController {
 
       if (locationData != null) {
         selectedLocation.value = locationData;
-        Get.snackbar('Success', 'Current location detected!', snackPosition: SnackPosition.BOTTOM);
+        // Get.snackbar('Success', 'Current location detected!', snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
       if (Get.isDialogOpen == true) Get.back();
-      Get.snackbar('Error', 'Failed to detect location: ${e.toString()}', snackPosition: SnackPosition.BOTTOM);
+      // Get.snackbar('Error', 'Failed to detect location: ${e.toString()}', snackPosition: SnackPosition.BOTTOM);
     }
   }
   
@@ -288,25 +505,38 @@ class HomeController extends GetxController {
     }
   }
   
-  /// Load banners
+  /// Load banners dynamically from backend (DB + uploads/banners/ folder scan)
   Future<void> loadBanners() async {
     try {
       final response = await _apiService.get(
         ApiEndpoints.bannersList,
-        queryParameters: {'position': 'top', 'status': 'active'},
+        queryParameters: {'status': 'active'}, 
       );
       final data = ApiService.handleResponse(response);
       final bannersList = data['banners'] ?? [];
       
-      banners.value = bannersList.map((banner) => {
-        'id': banner['id'],
-        'image': _getBannerImageUrl(banner['image'] ?? ''),
-        'title': banner['title'] ?? '',
-        'description': banner['description'] ?? '',
-        'link_url': banner['link_url'] ?? '',
-        'link_text': banner['link_text'] ?? 'Shop Now',
-      }).toList();
+      print('[Banners] API returned ${(bannersList as List).length} banners');
+      
+      final List<Map<String, dynamic>> parsedBanners = [];
+      for (final banner in bannersList) {
+        final bannerMap = Map<String, dynamic>.from(banner);
+        final imageUrl = bannerMap['image']?.toString() ?? '';
+        print('[Banners] Banner id=${bannerMap['id']}, image=$imageUrl');
+        
+        parsedBanners.add(<String, dynamic>{
+          'id': bannerMap['id'],
+          'image': imageUrl, // Already full URL from backend
+          'title': bannerMap['title']?.toString() ?? '',
+          'description': bannerMap['description']?.toString() ?? '',
+          'link_url': bannerMap['link_url']?.toString() ?? '',
+          'link_text': bannerMap['link_text']?.toString() ?? 'Shop Now',
+        });
+      }
+      
+      banners.value = parsedBanners;
+      print('[Banners] Successfully loaded ${banners.length} banners');
     } catch (e) {
+      print('[Banners] Error loading banners: $e');
       banners.value = [];
     }
   }
@@ -321,7 +551,16 @@ class HomeController extends GetxController {
       final data = ApiService.handleResponse(response);
       final productsList = data['products'] ?? [];
       
-      featuredProducts.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      var list = productsList as List;
+      if (list.isEmpty) {
+        final fallback = await _apiService.get(
+          ApiEndpoints.productsList,
+          queryParameters: {'limit': '6'},
+        );
+        final fallbackData = ApiService.handleResponse(fallback);
+        list = fallbackData['products'] ?? [];
+      }
+      featuredProducts.value = list.map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
     } catch (e) {
       featuredProducts.value = [];
     }
@@ -362,15 +601,54 @@ class HomeController extends GetxController {
   /// Load digital products only (instant download after payment)
   Future<void> loadDigitalProducts() async {
     try {
+      print('=== HomeController.loadDigitalProducts ===');
+      
+      // Use regular products API to get digital products
+      print('Loading from regular products API...');
       final response = await _apiService.get(
-        ApiEndpoints.digitalProducts,
-        queryParameters: {'limit': '20'},
+        ApiEndpoints.productsList,
+        queryParameters: {'limit': '50'}, // Load more products to find digital ones
       );
       final data = ApiService.handleResponse(response);
       final productsList = data['products'] ?? [];
-      digitalProducts.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      
+      print('Total products from API: ${productsList.length}');
+      
+      // Filter digital products
+      final digitalProductsList = productsList.where((p) => 
+        p['is_digital'] == true || p['is_digital'] == 1
+      ).toList();
+      
+      print('Digital products found: ${digitalProductsList.length}');
+      
+      // Check for media types
+      final videoProducts = digitalProductsList.where((p) => 
+        p['media_type']?.toString().toLowerCase() == 'video'
+      ).toList();
+      final audioProducts = digitalProductsList.where((p) => 
+        p['media_type']?.toString().toLowerCase() == 'audio'
+      ).toList();
+      print('Video products found: ${videoProducts.length}');
+      print('Audio products found: ${audioProducts.length}');
+      
+      // Print first few digital products for debugging
+      if (digitalProductsList.isNotEmpty) {
+        print('First digital product details:');
+        print('  ID: ${digitalProductsList.first['id']}');
+        print('  Name: ${digitalProductsList.first['name']}');
+        print('  is_digital: ${digitalProductsList.first['is_digital']}');
+        print('  media_type: ${digitalProductsList.first['media_type']}');
+        print('  category_id: ${digitalProductsList.first['category_id']}');
+      }
+      
+      digitalProducts.value = (digitalProductsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      print('Formatted digital products: ${digitalProducts.length} items');
+      print('====================================');
     } catch (e) {
-      digitalProducts.value = [];
+      print('Error loading digital products: $e');
+      if (digitalProducts.isEmpty) {
+        digitalProducts.value = [];
+      }
     }
   }
 
@@ -384,10 +662,128 @@ class HomeController extends GetxController {
       final data = ApiService.handleResponse(response);
       final productsList = data['products'] ?? [];
       
+      print('Loading products: ${productsList.length} items found');
       products.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      print('Formatted products: ${products.length} items loaded');
     } catch (e) {
+      print('Error loading products: $e');
       products.value = [];
     }
+  }
+  
+  /// Load products for a specific category (used for home screen showcases)
+  Future<void> loadCategoryProducts(int categoryId, RxList<Map<String, dynamic>> targetList) async {
+    try {
+      print('=== HomeController.loadCategoryProducts ===');
+      print('Loading category products for categoryId: $categoryId');
+      
+      final response = await _apiService.get(
+        ApiEndpoints.productsList,
+        queryParameters: {
+          'category_id': categoryId.toString(),
+          'limit': '10',
+        },
+      );
+      final data = ApiService.handleResponse(response);
+      final productsList = data['products'] ?? [];
+      
+      print('Raw products from API: ${productsList.length} items');
+      
+      // Check if any digital products in this category
+      final digitalProducts = productsList.where((p) => 
+        p['is_digital'] == true || p['is_digital'] == 1
+      ).toList();
+      print('Digital products found in category: ${digitalProducts.length}');
+      
+      targetList.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      print('Formatted products in targetList: ${targetList.length} items');
+      print('=====================================');
+    } catch (e) {
+      print('Error loading category products: $e');
+      targetList.value = [];
+    }
+  }
+
+  /// Add product to recently viewed (max 10, no duplicates)
+  void addToRecentlyViewed(Map<String, dynamic> product) {
+    recentlyViewed.removeWhere((p) => p['id'] == product['id']);
+    recentlyViewed.insert(0, product);
+    if (recentlyViewed.length > 10) {
+      recentlyViewed.removeLast();
+    }
+    // Save to cache immediately
+    CacheManager.saveData('home_recently_viewed', recentlyViewed.toList());
+  }
+
+  /// Load New Arrivals (sorted by newest first)
+  Future<void> loadNewArrivals() async {
+    try {
+      final response = await _apiService.get(ApiEndpoints.productsList, queryParameters: {'sort': 'newest', 'limit': '10'});
+      final data = ApiService.handleResponse(response);
+      final list = data['products'] ?? [];
+      newArrivalsProducts.value = (list as List).map((p) => _formatProduct(Map<String, dynamic>.from(p))).toList();
+    } catch (e) {
+      newArrivalsProducts.value = [];
+    }
+  }
+
+  /// Load Budget Products (items under a certain price)
+  Future<void> loadBudgetProducts(double maxPrice) async {
+    try {
+      final response = await _apiService.get(ApiEndpoints.productsList, queryParameters: {'limit': '50'});
+      final data = ApiService.handleResponse(response);
+      final list = data['products'] ?? [];
+      final formatted = (list as List).map((p) => _formatProduct(Map<String, dynamic>.from(p))).toList();
+      budgetProducts.value = formatted.where((p) {
+        final price = p['sale_price'] ?? p['price'] ?? 0.0;
+        final numericPrice = price is double ? price : double.tryParse(price.toString()) ?? 0.0;
+        return numericPrice > 0 && numericPrice <= maxPrice;
+      }).take(10).toList();
+    } catch (e) {
+      budgetProducts.value = [];
+    }
+  }
+
+  /// Media Spotlight — interleave video, audio, stickers (no audio-only overwrite).
+  void rebuildMediaShowcase({int maxTotal = 10}) {
+    final merged = _interleaveProductLists(
+      [
+        homeDecorProducts,
+        healthProducts,
+        stickerProducts,
+        collectiblesProducts,
+        cartoonLineProducts,
+      ],
+      maxTotal: maxTotal,
+    );
+    if (merged.isNotEmpty) {
+      mediaShowcaseProducts.value = merged;
+    }
+  }
+
+  List<Map<String, dynamic>> _interleaveProductLists(
+    List<RxList<Map<String, dynamic>>> sources, {
+    int maxTotal = 10,
+  }) {
+    final seen = <dynamic>{};
+    final result = <Map<String, dynamic>>[];
+    final lists = sources.map((s) => s.toList()).toList();
+    var round = 0;
+    while (result.length < maxTotal) {
+      var added = false;
+      for (final list in lists) {
+        if (round >= list.length) continue;
+        final p = list[round];
+        final id = p['id'];
+        if (id == null || !seen.add(id)) continue;
+        result.add(Map<String, dynamic>.from(p));
+        added = true;
+        if (result.length >= maxTotal) break;
+      }
+      if (!added) break;
+      round++;
+    }
+    return result;
   }
   
   /// Format product data
@@ -434,37 +830,74 @@ class HomeController extends GetxController {
     // Format image URL - API already returns full URL, but let's ensure it's correct
     if (imageUrl.isNotEmpty) {
       imageUrl = _getImageUrl(imageUrl);
-      // Debug: Print image URL
-      print('Product ${product['id']} Image URL: $imageUrl');
-    } else {
-      print('Product ${product['id']} has no image');
     }
     
-    // Get price - API uses 'price' for regular price, 'sale_price' for discounted price
-    final regularPrice = product['price'];
-    final salePrice = product['sale_price'];
+    // Extract digital and media type information
+    final bool isDigital = product['is_digital'] == true || product['is_digital'] == 1;
+    String mediaType = product['media_type']?.toString() ?? '';
     
-    final priceValue = double.tryParse(regularPrice?.toString() ?? '0') ?? 0.0;
-    final salePriceValue = salePrice != null && salePrice.toString().isNotEmpty
-        ? double.tryParse(salePrice.toString()) ?? 0.0
-        : null;
+    // Extract banner URL for digital products
+    String bannerUrl = '';
+    if (isDigital && product['banner'] != null) {
+      bannerUrl = product['banner'].toString();
+      if (bannerUrl.isNotEmpty) {
+        bannerUrl = _getImageUrl(bannerUrl);
+      }
+    }
     
-    return {
+    // Extract video URL for video products
+    String videoUrl = '';
+    if (isDigital && mediaType == 'video' && product['video_url'] != null) {
+      videoUrl = product['video_url'].toString();
+    }
+    
+    // If media_type is not set, try to detect from category name
+    if (isDigital && mediaType.isEmpty) {
+      final category = product['category'];
+      if (category != null && category['name'] != null) {
+        final categoryName = category['name'].toString().toLowerCase();
+        if (categoryName.contains('video')) {
+          mediaType = 'video';
+        } else if (categoryName.contains('audio') || categoryName.contains('music')) {
+          mediaType = 'audio';
+        }
+      }
+    }
+    
+    // Debug print to check formatted data
+    print('=== HomeController._formatProduct ===');
+    print('Product ID: ${product['id']}');
+    print('Original is_digital: ${product['is_digital']} (type: ${product['is_digital'].runtimeType})');
+    print('Original media_type: ${product['media_type']} (type: ${product['media_type'].runtimeType})');
+    print('Category name: ${product['category']?['name']}');
+    print('Detected is_digital: $isDigital');
+    print('Detected media_type: $mediaType');
+    print('Banner URL: $bannerUrl');
+    print('Video URL: $videoUrl');
+    print('================================');
+    
+    final Map<String, dynamic> formattedProduct = {
       'id': product['id'],
       'name': product['name'] ?? '',
-      'price': priceValue, // Regular price
-      'sale_price': salePriceValue, // Sale price (if exists)
-      'originalPrice': salePriceValue != null ? priceValue : null, // Original price when on sale
+      'price': product['price'] ?? 0.0,
+      'sale_price': product['sale_price'] ?? null,
+      'originalPrice': product['sale_price'] != null ? product['price'] : null,
       'image': imageUrl,
+      'banner': bannerUrl,  // Added banner URL
+      'video_url': videoUrl,  // Added video URL
       'rating': double.tryParse(product['rating']?.toString() ?? '0') ?? 0.0,
       'reviews': int.tryParse(product['review_count']?.toString() ?? product['reviews_count']?.toString() ?? '0') ?? 0,
       'review_count': int.tryParse(product['review_count']?.toString() ?? product['reviews_count']?.toString() ?? '0') ?? 0,
       'isFavorite': _checkWishlistStatus(product['id']),
       'category': product['category'] ?? {},
+      'category_id': product['category_id'] ??
+          (product['category'] is Map ? product['category']['id'] : null),
       'discount_percent': product['discount_percent'] ?? null,
-      'is_digital': product['is_digital'] == true,
-      'media_type': product['media_type']?.toString(),
+      'is_digital': isDigital,
+      'media_type': mediaType,
     };
+    
+    return formattedProduct;
   }
   
   /// Check if product is in wishlist
@@ -490,6 +923,11 @@ class HomeController extends GetxController {
     String cleanUrl = imagePath
         .replaceAll('\\/', '/')  // Replace escaped slashes
         .trim();  // Remove leading/trailing whitespace
+
+    cleanUrl = cleanUrl.replaceAll(
+      'https://ecommercepanel.templateforwebsites.com/',
+      'https://admin.fosproductions.org/',
+    );
     
     // If already full URL, return cleaned version
     if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
@@ -500,8 +938,12 @@ class HomeController extends GetxController {
     // Remove leading slash if present
     final cleanPath = cleanUrl.startsWith('/') ? cleanUrl.substring(1) : cleanUrl;
     
-    // Check if path already includes 'products/' or 'uploads/'
+    // Check if path already includes 'banners/' or 'uploads/'
     if (cleanPath.contains('products/') || cleanPath.contains('uploads/')) {
+      // If it already contains 'uploads/', don't double it if imageBaseUrl also has it
+      if (cleanPath.startsWith('uploads/') && ApiService.imageBaseUrl.endsWith('uploads/')) {
+        return '${ApiService.imageBaseUrl.replaceAll('uploads/', '')}$cleanPath';
+      }
       return '${ApiService.imageBaseUrl}$cleanPath';
     }
     
@@ -561,14 +1003,14 @@ class HomeController extends GetxController {
           print('Navigation completed with result: $value');
         }).catchError((error) {
           print('Navigation error: $error');
-          Get.snackbar('Error', 'Failed to open category: $error');
+          // Get.snackbar('Error', 'Failed to open category: $error');
         });
         
         print('Navigation called successfully');
       } catch (e, stackTrace) {
         print('Navigation error: $e');
         print('Stack trace: $stackTrace');
-        Get.snackbar('Error', 'Failed to open category: $e');
+        // Get.snackbar('Error', 'Failed to open category: $e');
       }
     } else {
       print('Invalid category index: $index (categories length: ${categories.length})');
@@ -609,77 +1051,142 @@ class HomeController extends GetxController {
         wishlistController = Get.put(WishlistController());
       }
       
-      // Toggle wishlist
-      // Check if product is in wishlist (for future use)
-      // final wasInWishlist = wishlistController.isInWishlist(productId);
+      final wasInWishlist = wishlistController.isInWishlist(productId);
+      final isNowInWishlist = !wasInWishlist;
+      
+      void updateLocalFavoriteState(bool state) =>
+          _setFavoriteOnAllLists(productId, state);
+
+      // 1. Optimistic Update immediately
+      updateLocalFavoriteState(isNowInWishlist);
+      
+      // 2. Perform API call in background/async
       final success = await wishlistController.toggleWishlist(productId);
       
       if (success) {
-        final isNowInWishlist = wishlistController.isInWishlist(productId);
-        
-        // Update in featured products
-        final featuredIndex = featuredProducts.indexWhere((p) => p['id'] == productId);
-        if (featuredIndex != -1) {
-          featuredProducts[featuredIndex]['isFavorite'] = isNowInWishlist;
-          featuredProducts.refresh();
-        }
-        
-        // Update in products
-        final productIndex = products.indexWhere((p) => p['id'] == productId);
-        if (productIndex != -1) {
-          products[productIndex]['isFavorite'] = isNowInWishlist;
-          products.refresh();
-        }
-        
-        // Update in discounted products
-        final discountedIndex = discountedProducts.indexWhere((p) => p['id'] == productId);
-        if (discountedIndex != -1) {
-          discountedProducts[discountedIndex]['isFavorite'] = isNowInWishlist;
-          discountedProducts.refresh();
-        }
-        
-        // Update in top rated products
-        final topRatedIndex = topRatedProducts.indexWhere((p) => p['id'] == productId);
-        if (topRatedIndex != -1) {
-          topRatedProducts[topRatedIndex]['isFavorite'] = isNowInWishlist;
-          topRatedProducts.refresh();
-        }
-        // Update in digital products
-        final digitalIndex = digitalProducts.indexWhere((p) => p['id'] == productId);
-        if (digitalIndex != -1) {
-          digitalProducts[digitalIndex]['isFavorite'] = isNowInWishlist;
-          digitalProducts.refresh();
-        }
-
-        // Defer refresh calls to after the current build cycle
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (featuredIndex != -1) featuredProducts.refresh();
-          if (productIndex != -1) products.refresh();
-          if (discountedIndex != -1) discountedProducts.refresh();
-          if (topRatedIndex != -1) topRatedProducts.refresh();
-          if (digitalIndex != -1) digitalProducts.refresh();
-        });
-
         // Show feedback
         if (isNowInWishlist) {
           Get.snackbar('Success', 'Added to wishlist', duration: const Duration(seconds: 2));
         } else {
           Get.snackbar('Success', 'Removed from wishlist', duration: const Duration(seconds: 2));
         }
+      } else {
+        // 3. Revert on failure
+        updateLocalFavoriteState(wasInWishlist);
       }
     } catch (e) {
+      if (Get.isRegistered<WishlistController>()) {
+        final originalState =
+            Get.find<WishlistController>().isInWishlist(productId);
+        _setFavoriteOnAllLists(productId, originalState);
+      }
       Get.snackbar('Error', 'Failed to update wishlist: ${e.toString()}');
     }
   }
+
+  void _setFavoriteOnAllLists(int productId, bool state) {
+    final lists = [
+      featuredProducts,
+      products,
+      discountedProducts,
+      topRatedProducts,
+      digitalProducts,
+      homeDecorProducts,
+      healthProducts,
+      stationeryProducts,
+      collectiblesProducts,
+      cartoonLineProducts,
+      stickerProducts,
+      newArrivalsProducts,
+      budgetProducts,
+      mediaShowcaseProducts,
+      recentlyViewed,
+    ];
+    for (final list in lists) {
+      final i = list.indexWhere((p) => p['id'] == productId);
+      if (i != -1) {
+        list[i]['isFavorite'] = state;
+        list.refresh();
+      }
+    }
+  }
   
-  /// Navigate to product details
-  void navigateToProductDetails(dynamic productId) {
-    // Ensure productId is an integer
-    final id = productId is int ? productId : int.tryParse(productId.toString()) ?? 0;
-    if (id > 0) {
-      Get.toNamed('/product-details', arguments: id);
-    } else {
+  /// Find a product across all home lists (for instant detail preview).
+  Map<String, dynamic>? findProductById(int id) {
+    final lists = [
+      featuredProducts,
+      products,
+      digitalProducts,
+      discountedProducts,
+      topRatedProducts,
+      homeDecorProducts,
+      healthProducts,
+      stationeryProducts,
+      collectiblesProducts,
+      cartoonLineProducts,
+      stickerProducts,
+      newArrivalsProducts,
+      budgetProducts,
+      mediaShowcaseProducts,
+      recentlyViewed,
+    ];
+    for (final list in lists) {
+      final found = list.firstWhereOrNull((p) => p['id'] == id);
+      if (found != null) {
+        return Map<String, dynamic>.from(found);
+      }
+    }
+    return null;
+  }
+
+  /// Navigate to product details — preview first, no blocking spinner.
+  void navigateToProductDetails(
+    dynamic productId, {
+    Map<String, dynamic>? preview,
+  }) {
+    final id = productId is int
+        ? productId
+        : int.tryParse(productId.toString()) ?? 0;
+    if (id <= 0) {
       Get.snackbar('Error', 'Invalid product ID');
+      return;
+    }
+    final item = preview ?? findProductById(id);
+    ProductDetailsNavigation.go(id: id, preview: item);
+    if (item != null) {
+      _prefetchProductImages(item);
+    }
+  }
+
+  /// Prefetch product images for faster loading
+  Future<void> _prefetchProductImages(Map<String, dynamic> product) async {
+    try {
+      final images = <String>[];
+
+      // Add main image
+      if (product['image'] != null && product['image'].toString().isNotEmpty) {
+        images.add(_getImageUrl(product['image'].toString()));
+      }
+
+      // Add additional images from images array
+      if (product['images'] != null && product['images'] is List) {
+        for (var img in product['images']) {
+          if (img != null && img.toString().isNotEmpty) {
+            images.add(_getImageUrl(img.toString()));
+          }
+        }
+      }
+
+      // Prefetch all images using DefaultCacheManager
+      for (var imageUrl in images) {
+        try {
+          await cache.DefaultCacheManager().getSingleFile(imageUrl);
+        } catch (e) {
+          print('[HomeController] Failed to prefetch image: $imageUrl, error: $e');
+        }
+      }
+    } catch (e) {
+      print('[HomeController] Error prefetching images: $e');
     }
   }
   
@@ -708,8 +1215,26 @@ class HomeController extends GetxController {
   
   /// Navigate to notifications
   void navigateToNotifications() {
-    // TODO: Navigate to notifications screen
-    Get.snackbar('Info', 'Notifications screen coming soon');
+    Get.toNamed(AppRoutes.notifications);
+  }
+  
+  /// Get notification count (for badge)
+  RxInt get notificationCount {
+    try {
+      if (Get.isRegistered<NotificationController>()) {
+        final notificationController = Get.find<NotificationController>();
+        final count = notificationController.unreadCount;
+        print('[HomeController] Notification count: ${count.value}');
+        return count;
+      }
+    } catch (e) {
+      print('[HomeController] Error getting notification count: $e');
+    }
+    return 0.obs; // Fallback to 0 if controller not available
+  }
+  
+  int getNotificationCount() {
+    return notificationCount.value;
   }
   
   /// Show sort dialog for featured products
@@ -929,6 +1454,51 @@ class HomeController extends GetxController {
       return ((regPrice - sale) / regPrice * 100).round();
     }
     return 0;
+  }
+
+  /// Load active orders count
+  Future<void> loadActiveOrdersCount() async {
+    try {
+      if (!CacheManager.isLoggedIn()) {
+        activeOrdersCount.value = 0;
+        return;
+      }
+      
+      final response = await _apiService.get(ApiEndpoints.ordersList);
+      ApiService.handleResponse(response);
+      
+      if (response.data['success'] == true) {
+        final orders = response.data['data'] as List? ?? [];
+        // Count all orders (digital and physical)
+        activeOrdersCount.value = orders.length;
+      }
+    } catch (e) {
+      // Keep previous count on error
+      print('Error loading orders count: $e');
+    }
+  }
+
+  /// Load referral count
+  Future<void> loadReferralCount() async {
+    try {
+      if (!CacheManager.isLoggedIn()) {
+        referralCount.value = 0;
+        return;
+      }
+      
+      // Mock referral count for now - replace with actual API call
+      // This could be from a referral endpoint or user profile data
+      referralCount.value = 2; // Example: 2 active referrals
+      
+      // Future implementation:
+      // final response = await _apiService.get(ApiEndpoints.referrals);
+      // if (response.data['success'] == true) {
+      //   referralCount.value = response.data['data']['active_referrals'] ?? 0;
+      // }
+    } catch (e) {
+      // Keep previous count on error
+      print('Error loading referral count: $e');
+    }
   }
 }
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Flutter getApplicationSupportDirectory() -> context.getFilesDir() -->
+    <files-path name="files" path="." />
+    <!-- Flutter getApplicationDocumentsDirectory() -> ../app_flutter/ -->
+    <files-path name="app_flutter" path="../app_flutter/" />
+    <cache-path name="cache" path="." />
+</paths>

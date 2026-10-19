@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/checkout_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/loading_widget.dart';
 import '../../routes/app_routes.dart';
 
@@ -14,7 +15,7 @@ class CheckoutScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.put(CheckoutController());
+    final controller = GetXRegistry.checkout();
     
     return Scaffold(
       backgroundColor: AppColors.background,

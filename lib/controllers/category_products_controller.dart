@@ -3,7 +3,9 @@ import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
 import '../utils/cache_manager.dart';
+import '../utils/data_cache.dart';
 import '../routes/app_routes.dart';
+import '../utils/product_details_navigation.dart';
 import 'wishlist_controller.dart';
 
 /// Category Products Controller
@@ -19,6 +21,12 @@ class CategoryProductsController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    
+    // Initialize wishlist controller to ensure isFavorite status is available
+    if (CacheManager.isLoggedIn() && !Get.isRegistered<WishlistController>()) {
+      Get.put(WishlistController());
+    }
+    
     // Get category info from arguments
     final args = Get.arguments;
     print('CategoryProductsController onInit - Arguments: $args');
@@ -26,6 +34,13 @@ class CategoryProductsController extends GetxController {
     if (args is Map) {
       categoryId = args['categoryId'] ?? 0;
       categoryName = args['categoryName'] ?? 'Products';
+      final seeded = args['products'];
+      if (seeded is List && seeded.isNotEmpty) {
+        products.value = seeded
+            .whereType<Map>()
+            .map((p) => Map<String, dynamic>.from(p))
+            .toList();
+      }
     } else if (args is int) {
       categoryId = args;
       categoryName = 'Products';
@@ -34,15 +49,26 @@ class CategoryProductsController extends GetxController {
     print('CategoryProductsController - categoryId: $categoryId, categoryName: $categoryName');
     
     if (categoryId > 0) {
+      if (products.isEmpty) _loadCachedProducts();
       loadCategoryProducts();
     } else {
       print('CategoryProductsController - Invalid categoryId: $categoryId');
     }
   }
   
+  void _loadCachedProducts() {
+    final cached = DataCache.loadList(DataCache.categoryProducts(categoryId));
+    if (cached != null && cached.isNotEmpty) {
+      products.value = cached;
+    }
+  }
+
   /// Load products by category
   Future<void> loadCategoryProducts() async {
-    isLoading.value = true;
+    final hadContent = products.isNotEmpty;
+    if (!hadContent) {
+      isLoading.value = true;
+    }
     try {
       final response = await _apiService.get(
         ApiEndpoints.productsList,
@@ -54,10 +80,14 @@ class CategoryProductsController extends GetxController {
       final data = ApiService.handleResponse(response);
       final productsList = data['products'] ?? [];
       
-      products.value = (productsList as List).map((product) => _formatProduct(Map<String, dynamic>.from(product))).toList();
+      products.value = (productsList as List)
+          .map((product) => _formatProduct(Map<String, dynamic>.from(product)))
+          .toList();
+      await DataCache.saveList(DataCache.categoryProducts(categoryId), products.toList());
     } catch (e) {
-      ApiService.showErrorSnackbar(e);
-      products.value = [];
+      if (!hadContent) {
+        ApiService.showErrorSnackbar(e);
+      }
     } finally {
       isLoading.value = false;
     }
@@ -118,22 +148,66 @@ class CategoryProductsController extends GetxController {
         ? double.tryParse(salePrice.toString()) ?? 0.0
         : null;
     
-    print('Formatting product ${product['id']}: imageUrl = $imageUrl');
-    
+    final bool isDigital =
+        product['is_digital'] == true || product['is_digital'] == 1;
+    String mediaType = product['media_type']?.toString() ?? '';
+    String bannerUrl = '';
+    if (isDigital && product['banner'] != null) {
+      bannerUrl = _getImageUrl(product['banner'].toString());
+    }
+    if (isDigital && mediaType.isEmpty) {
+      final category = product['category'];
+      if (category is Map && category['name'] != null) {
+        final categoryName = category['name'].toString().toLowerCase();
+        if (categoryName.contains('video')) {
+          mediaType = 'video';
+        } else if (categoryName.contains('audio') ||
+            categoryName.contains('music')) {
+          mediaType = 'audio';
+        }
+      }
+    }
+
     return {
       'id': product['id'],
       'name': product['name'] ?? '',
-      'price': priceValue, // Regular price
-      'sale_price': salePriceValue, // Sale price (if exists)
-      'originalPrice': salePriceValue != null ? priceValue : null, // Original price when on sale
+      'price': priceValue,
+      'sale_price': salePriceValue,
+      'originalPrice': salePriceValue != null ? priceValue : null,
       'image': imageUrl,
+      'banner': bannerUrl,
       'rating': double.tryParse(product['rating']?.toString() ?? '0') ?? 0.0,
-      'reviews': int.tryParse(product['review_count']?.toString() ?? product['reviews_count']?.toString() ?? '0') ?? 0,
-      'review_count': int.tryParse(product['review_count']?.toString() ?? product['reviews_count']?.toString() ?? '0') ?? 0,
-      'isFavorite': false,
+      'reviews': int.tryParse(product['review_count']?.toString() ??
+              product['reviews_count']?.toString() ??
+              '0') ??
+          0,
+      'review_count': int.tryParse(product['review_count']?.toString() ??
+              product['reviews_count']?.toString() ??
+              '0') ??
+          0,
+      'isFavorite': _checkWishlistStatus(product['id']),
       'category': product['category'] ?? {},
+      'category_id': product['category_id'] ??
+          (product['category'] is Map ? product['category']['id'] : null),
       'discount_percent': product['discount_percent'] ?? null,
+      'is_digital': isDigital,
+      'media_type': mediaType,
+      'is_sticker_pack':
+          product['is_sticker_pack'] == true || product['is_sticker_pack'] == 1,
     };
+  }
+  
+  /// Check if product is in wishlist
+  bool _checkWishlistStatus(int productId) {
+    try {
+      if (Get.isRegistered<WishlistController>()) {
+        final wishlistController = Get.find<WishlistController>();
+        return wishlistController.isInWishlist(productId);
+      }
+    } catch (e) {
+      // If wishlist controller not available, return false
+    }
+    return false;
   }
   
   /// Get full image URL
@@ -144,19 +218,26 @@ class CategoryProductsController extends GetxController {
     
     // Clean the URL: remove escaped slashes, trim whitespace
     String cleanUrl = imagePath
-        .replaceAll('\\/', '/')  // Replace escaped slashes
-        .trim();  // Remove leading/trailing whitespace
-    
-    // If already full URL, return cleaned version
+        .replaceAll('\\/', '/')
+        .trim();
+
+    cleanUrl = cleanUrl.replaceAll(
+      'https://ecommercepanel.templateforwebsites.com/',
+      'https://admin.fosproductions.org/',
+    );
+
     if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
       return cleanUrl;
     }
-    
-    // If relative path, add base URL
-    final cleanPath = cleanUrl.startsWith('/') ? cleanUrl.substring(1) : cleanUrl;
-    
-    // Check if path already includes 'products/' or 'uploads/'
+
+    final cleanPath =
+        cleanUrl.startsWith('/') ? cleanUrl.substring(1) : cleanUrl;
+
     if (cleanPath.contains('products/') || cleanPath.contains('uploads/')) {
+      if (cleanPath.startsWith('uploads/') &&
+          ApiService.imageBaseUrl.endsWith('uploads/')) {
+        return '${ApiService.imageBaseUrl.replaceAll('uploads/', '')}$cleanPath';
+      }
       return '${ApiService.imageBaseUrl}$cleanPath';
     }
     
@@ -223,12 +304,22 @@ class CategoryProductsController extends GetxController {
   }
   
   /// Navigate to product details
-  void navigateToProductDetails(dynamic productId) {
-    final id = productId is int ? productId : int.tryParse(productId.toString()) ?? 0;
-    if (id > 0) {
-      Get.toNamed('/product-details', arguments: id);
-    } else {
+  void navigateToProductDetails(
+    dynamic productId, {
+    Map<String, dynamic>? preview,
+  }) {
+    final id = productId is int
+        ? productId
+        : int.tryParse(productId.toString()) ?? 0;
+    if (id <= 0) {
       Get.snackbar('Error', 'Invalid product ID');
+      return;
     }
+    final item = preview ??
+        products.firstWhereOrNull((p) => p['id'] == id);
+    ProductDetailsNavigation.go(
+      id: id,
+      preview: item != null ? Map<String, dynamic>.from(item) : null,
+    );
   }
 }

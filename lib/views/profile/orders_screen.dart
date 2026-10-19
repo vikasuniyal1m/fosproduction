@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/product_grid_card.dart';
+import '../../controllers/home_controller.dart';
+import '../../controllers/notification_controller.dart';
+import '../../services/notification_service.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/profile_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 import '../../widgets/order_reason_dialog.dart';
 import '../../routes/app_routes.dart';
+import '../../utils/digital_product_type.dart';
+import '../../watch_faces/watch_face_order_helper.dart';
 
-/// Orders Screen
 /// Shows user's order history
 class OrdersScreen extends StatelessWidget {
   const OrdersScreen({super.key});
@@ -18,10 +23,29 @@ class OrdersScreen extends StatelessWidget {
     ScreenSize.init(context);
     final controller = Get.put(ProfileController());
     
+    // Try to get HomeController, but don't crash if not found
+    HomeController? homeController;
+    try {
+      homeController = Get.find<HomeController>();
+    } catch (e) {
+      homeController = null;
+    }
+    
+    // Debug notification count
+    if (homeController != null) {
+      print('[OrdersScreen] Build - Notification count: ${homeController.notificationCount.value}');
+      print('[OrdersScreen] Build - Should show badge: ${homeController.notificationCount.value > 0}');
+    }
+    
     // Load orders when screen is opened (always refresh to get latest orders)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!controller.isLoadingOrders.value) {
-        controller.loadOrders();
+      controller.loadOrders(silent: true);
+      
+      // Force notification count refresh
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.refreshUnreadCount();
+        print('[OrdersScreen] Forced notification refresh');
       }
     });
     
@@ -40,22 +64,81 @@ class OrdersScreen extends StatelessWidget {
         appBar: AppBar(
           title: Text(
             'My Orders',
-            style: TextStyle(
-              fontSize: ScreenSize.headingMedium,
-            ),
+            style: TextStyle(fontSize: ScreenSize.headingSmall),
+            overflow: TextOverflow.ellipsis,
           ),
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.textWhite,
           elevation: 0,
           centerTitle: true,
-          toolbarHeight: ScreenSize.buttonHeightLarge,
+          toolbarHeight: ScreenSize.screenWidth >= 1000 ? ScreenSize.buttonHeightLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.buttonHeightMedium : ScreenSize.buttonHeightLarge),
           leading: IconButton(
-            icon: Icon(Icons.arrow_back, size: ScreenSize.iconMedium),
+            icon: Icon(Icons.arrow_back, 
+                      size: ScreenSize.screenWidth >= 1000 ? ScreenSize.iconMedium : ScreenSize.iconMedium),
             onPressed: () => Get.offAllNamed(AppRoutes.home),
           ),
+          actions: [
+            // Notification Badge
+            if (homeController != null)
+              Obx(() {
+                final notificationCount = homeController!.notificationCount.value;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.notifications_none_outlined,
+                                size: ScreenSize.screenWidth >= 1000 ? ScreenSize.iconMedium : ScreenSize.iconMedium),
+                      onPressed: () => Get.toNamed(AppRoutes.notifications),
+                    ),
+                    // Notification Badge
+                    if (notificationCount > 0)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            notificationCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              })
+            else
+              IconButton(
+                icon: Icon(Icons.notifications_none_outlined,
+                          size: ScreenSize.screenWidth >= 1000 ? ScreenSize.iconMedium : ScreenSize.iconMedium),
+                onPressed: () => Get.toNamed(AppRoutes.notifications),
+              ),
+            if (controller.orders.isNotEmpty)
+              IconButton(
+                icon: Icon(Icons.refresh, 
+                          size: ScreenSize.screenWidth >= 1000 ? ScreenSize.iconMedium : ScreenSize.iconMedium),
+                onPressed: () => controller.loadOrders(silent: true),
+              ),
+          ],
         ),
         body: Obx(() {
-          if (controller.isLoadingOrders.value) {
+          if (SilentLoading.blockUi(
+            isLoading: controller.isLoadingOrders.value,
+            hasContent: controller.hasEverLoadedOrders.value ||
+                controller.orders.isNotEmpty,
+          )) {
             return const LoadingWidget();
           }
           
@@ -64,13 +147,18 @@ class OrdersScreen extends StatelessWidget {
           }
           
           return RefreshIndicator(
-            onRefresh: controller.loadOrders,
+            onRefresh: () => controller.loadOrders(silent: true),
             child: Obx(() => ListView.builder(
               key: ValueKey('orders_${controller.orders.length}_${controller.orders.map((o) => '${o['id']}_${o['status']}').join('_')}'), // Force rebuild when orders change
-              padding: EdgeInsets.all(ScreenSize.spacingMedium),
-              itemCount: controller.orders.length,
+              padding: EdgeInsets.all(ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingSmall : ScreenSize.spacingMedium))),
+              itemCount: controller.orders
+                  .where(WatchFaceOrderHelper.isWatchFaceOrderForCurrentPlatform)
+                  .length,
               itemBuilder: (context, index) {
-                final order = controller.orders[index];
+                final visibleOrders = controller.orders
+                    .where(WatchFaceOrderHelper.isWatchFaceOrderForCurrentPlatform)
+                    .toList();
+                final order = visibleOrders[index];
                 return _buildOrderCard(order, controller);
               },
             )),
@@ -82,223 +170,247 @@ class OrdersScreen extends StatelessWidget {
   
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.shopping_bag_outlined,
-            size: ScreenSize.iconExtraLarge * 2,
-            color: AppColors.textTertiary,
-          ),
-          SizedBox(height: ScreenSize.spacingLarge),
-          Text(
-            'No Orders Yet',
-            style: TextStyle(
-              fontSize: ScreenSize.headingMedium,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(ScreenSize.screenWidth >= 1200 ? ScreenSize.paddingLarge : (ScreenSize.screenWidth >= 1000 ? ScreenSize.paddingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.paddingMedium : ScreenSize.paddingLarge))),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(ScreenSize.screenWidth >= 1200 ? 36 : (ScreenSize.screenWidth >= 1000 ? 32 : (ScreenSize.screenWidth >= 768 ? 28 : 24))),
+              decoration: BoxDecoration(
+                color: AppColors.backgroundGrey,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.shopping_bag_outlined,
+                size: ScreenSize.screenWidth >= 1200 ? ScreenSize.iconExtraLarge * 2.4 : (ScreenSize.screenWidth >= 1000 ? ScreenSize.iconExtraLarge * 2.2 : (ScreenSize.screenWidth >= 768 ? ScreenSize.iconExtraLarge * 2 : ScreenSize.iconExtraLarge * 2)),
+                color: AppColors.textTertiary,
+              ),
             ),
-          ),
-          SizedBox(height: ScreenSize.spacingSmall),
-          Text(
-            'Start shopping to see your orders here',
-            style: TextStyle(
-              fontSize: ScreenSize.textMedium,
-              color: AppColors.textSecondary,
+            SizedBox(height: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge))),
+            Text(
+              'No Orders Yet',
+              style: TextStyle(
+                fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.headingExtraLarge : (ScreenSize.screenWidth >= 1000 ? ScreenSize.headingExtraLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingLarge : ScreenSize.headingMedium)),
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-        ],
+            SizedBox(height: ScreenSize.spacingSmall),
+            Text(
+              'Start shopping to see your orders here',
+              style: TextStyle(
+                fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textMedium : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.textMedium : ScreenSize.textMedium)),
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge))),
+            ElevatedButton.icon(
+              onPressed: () => Get.offAllNamed('/home'),
+              icon: Icon(Icons.shopping_cart_outlined, 
+                       size: ScreenSize.screenWidth >= 1200 ? 24 : (ScreenSize.screenWidth >= 1000 ? 22 : (ScreenSize.screenWidth >= 768 ? 20 : 20))),
+              label: Text('Start Shopping'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.textWhite,
+                padding: EdgeInsets.symmetric(
+                  horizontal: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge)),
+                  vertical: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingMedium)),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 28 : (ScreenSize.screenWidth >= 1000 ? 26 : (ScreenSize.screenWidth >= 768 ? 24 : 25))),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
   
   Widget _buildOrderCard(Map<String, dynamic> order, ProfileController controller) {
-    // Ensure status is lowercase for comparison
-    final status = (order['status'] ?? 'pending').toString().toLowerCase();
+    final items = order['items'] as List? ?? [];
+    final hasPhysicalItems = DigitalProductType.hasPhysicalItemsInOrder(
+      order,
+      items: items,
+    );
+    final isWatchFaceOrder = order['is_watch_face_order'] == true ||
+        WatchFaceOrderHelper.isWatchFaceOrder(order, items: items);
+    final isDigitalOrder = DigitalProductType.isDigitalOrder(
+      order,
+      items: items,
+    );
+    final statusBadge = DigitalProductType.orderFulfillmentBadge(
+      order,
+      hasPhysicalItems: hasPhysicalItems,
+      items: items,
+    );
+    final status = DigitalProductType.displayOrderStatus(
+      order,
+      items: items,
+    );
     final statusColor = _getStatusColor(status);
+    final isWatchFacePaid =
+        isWatchFaceOrder && WatchFaceOrderHelper.isOrderPaid(order);
     
     return Container(
-      margin: EdgeInsets.only(bottom: ScreenSize.spacingMedium),
+      margin: EdgeInsets.only(bottom: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall))),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-        boxShadow: AppColors.cardShadow,
+        border: Border.all(color: AppColors.border.withOpacity(0.5), width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Order Header
-                Container(
-                  padding: EdgeInsets.all(ScreenSize.spacingMedium),
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundGrey,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(ScreenSize.tileBorderRadius),
-                      topRight: Radius.circular(ScreenSize.tileBorderRadius),
-                    ),
-                  ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)), 
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)), 
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)), 
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingTiny : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingTiny : (ScreenSize.screenWidth >= 768 ? 2 : ScreenSize.spacingTiny))
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Flexible(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Order #${order['order_number'] ?? order['id']}',
-                                  style: TextStyle(
-                                    fontSize: ScreenSize.textLarge,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(height: ScreenSize.spacingExtraSmall),
-                                Text(
-                                  order['created_at'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: ScreenSize.textSmall,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (order['has_digital'] == true) ...[
-                                  SizedBox(height: ScreenSize.spacingExtraSmall),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: ScreenSize.spacingSmall,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
-                                      border: Border.all(
-                                        color: AppColors.primary.withOpacity(0.4),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.download, size: 12, color: AppColors.primary),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Digital',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          SizedBox(width: ScreenSize.spacingSmall),
-                          Flexible(
-                            flex: 1,
-                            child: Container(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: ScreenSize.spacingSmall,
-                                vertical: ScreenSize.spacingExtraSmall,
-                              ),
-                              decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
-                                border: Border.all(
-                                  color: statusColor.withOpacity(0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    height: 6,
-                                    decoration: BoxDecoration(
-                                      color: statusColor,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  SizedBox(width: ScreenSize.spacingExtraSmall),
-                                  Flexible(
-                                    child: Text(
-                                      _formatStatus(status),
-                                      style: TextStyle(
-                                        fontSize: ScreenSize.textSmall,
-                                        fontWeight: FontWeight.w600,
-                                        color: statusColor,
-                                        letterSpacing: 0.3,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Order #${order['order_number'] ?? order['id']}',
+                        style: TextStyle(
+                          fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textSmall)),
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: ScreenSize.spacingSmall),
-                      _buildDetailRow('Payment Status', _formatPaymentStatus(order['payment_status'] ?? 'pending')),
+                      SizedBox(height: ScreenSize.screenWidth >= 1200 ? 2 : (ScreenSize.screenWidth >= 1000 ? 2 : (ScreenSize.screenWidth >= 768 ? 1 : 2))),
+                      Text(
+                        order['created_at'] ?? '',
+                        style: TextStyle(
+                          fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
+                          color: AppColors.textSecondary.withOpacity(0.7),
+                        ),
+                      ),
+                      if (isWatchFaceOrder) ...[
+                        SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppColors.secondary.withOpacity(0.35)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.watch, size: 12, color: AppColors.secondary),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Watch Face',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
+                if (statusBadge.show)
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ScreenSize.screenWidth >= 1200 ? 10 : (ScreenSize.screenWidth >= 1000 ? 10 : (ScreenSize.screenWidth >= 768 ? 8 : 10)), 
+                      vertical: ScreenSize.screenWidth >= 1200 ? 6 : (ScreenSize.screenWidth >= 1000 ? 6 : (ScreenSize.screenWidth >= 768 ? 4 : 6))
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 12 : (ScreenSize.screenWidth >= 1000 ? 12 : (ScreenSize.screenWidth >= 768 ? 10 : 12))),
+                      border: Border.all(color: statusColor.withOpacity(0.3), width: 0.5),
+                    ),
+                    child: Text(
+                      _formatStatus(status),
+                      style: TextStyle(
+                        fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           
-          // Order Items
+          Divider(height: 1, color: AppColors.border.withOpacity(0.3)),
+          
+          // Order Items Preview
           Padding(
-            padding: EdgeInsets.all(ScreenSize.spacingMedium),
+            padding: EdgeInsets.all(ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall))),
             child: Column(
               children: [
-                // First item preview
                 if (order['items'] != null && (order['items'] as List).isNotEmpty)
                   _buildOrderItemPreview(order['items'][0]),
                 
-                // Total
-                Padding(
-                  padding: EdgeInsets.only(top: ScreenSize.spacingMedium),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Total',
+                if (order['items'] != null && (order['items'] as List).length > 1)
+                  Padding(
+                    padding: EdgeInsets.only(top: ScreenSize.screenWidth >= 1200 ? 4 : (ScreenSize.screenWidth >= 1000 ? 4 : (ScreenSize.screenWidth >= 768 ? 2 : 4))),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '+ ${(order['items'] as List).length - 1} more items',
                         style: TextStyle(
-                          fontSize: ScreenSize.textLarge,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                      Flexible(
-                        child: Text(
-                          '\$${order['total_amount']?.toStringAsFixed(2) ?? '0.00'}',
-                          style: TextStyle(
-                            fontSize: ScreenSize.headingSmall,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                          textAlign: TextAlign.end,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
+                
+                SizedBox(height: ScreenSize.screenWidth >= 1200 ? 6 : (ScreenSize.screenWidth >= 1000 ? 6 : (ScreenSize.screenWidth >= 768 ? 4 : 6))),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Total Amount',
+                      style: TextStyle(
+                        fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      '\$${order['total_amount']?.toStringAsFixed(2) ?? '0.00'}',
+                      style: TextStyle(
+                        fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textSmall)),
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -306,156 +418,66 @@ class OrdersScreen extends StatelessWidget {
           
           // Action Buttons
           Container(
-            padding: EdgeInsets.all(ScreenSize.spacingMedium),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: AppColors.border),
-              ),
+            padding: EdgeInsets.fromLTRB(
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)), 
+              0, 
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)), 
+              ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall))
             ),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          final orderId = order['id'];
-                          print('[OrdersScreen] View Details clicked for order: $orderId (type: ${orderId.runtimeType})');
-                          controller.viewOrderDetails(orderId);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: BorderSide(color: AppColors.primary),
-                          padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                          ),
-                        ),
-                        child: Text('View Details', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                      ),
-                    ),
-                    SizedBox(width: ScreenSize.spacingSmall),
-                    // Download button: only for digital products and only after payment
-                    if (order['has_digital'] == true &&
-                        (order['payment_status'] ?? '').toString().toLowerCase() == 'paid')
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => controller.viewOrderDetails(order['id']),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.textWhite,
-                            padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                            ),
-                          ),
-                          icon: Icon(Icons.download, size: ScreenSize.iconSmall),
-                          label: Text('Download', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                        ),
-                      ),
-                    if (order['has_digital'] == true &&
-                        (order['payment_status'] ?? '').toString().toLowerCase() == 'paid')
-                      SizedBox(width: ScreenSize.spacingSmall),
-                    if (status != 'cancelled' && status != 'pending')
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => Get.toNamed('/order-tracking', arguments: order['id']),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: BorderSide(color: AppColors.primary),
-                            padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                            ),
-                          ),
-                          icon: Icon(Icons.local_shipping, size: ScreenSize.iconSmall),
-                          label: Text('Track', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                        ),
-                      ),
-                  ],
+                Expanded(
+                  child: _buildCompactButton(
+                    label: 'Details',
+                    onPressed: () => controller.viewOrderDetails(order['id']),
+                    isPrimary: false,
+                  ),
                 ),
-                // Cancel button (for pending, confirmed, processing orders)
-                // Use lowercase comparison
-                if (status == 'pending' || status == 'confirmed' || status == 'processing') ...[
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
+                SizedBox(width: ScreenSize.screenWidth >= 1200 ? 6 : (ScreenSize.screenWidth >= 1000 ? 6 : (ScreenSize.screenWidth >= 768 ? 4 : 6))),
+                if (hasPhysicalItems &&
+                    status != 'cancelled' &&
+                    status != 'pending')
+                  Expanded(
+                    child: _buildCompactButton(
+                      label: 'Track',
+                      icon: Icons.local_shipping,
+                      onPressed: () => Get.toNamed('/order-tracking', arguments: order['id']),
+                      isPrimary: true,
+                    ),
+                  )
+                else if (isWatchFacePaid)
+                  Expanded(
+                    child: _buildCompactButton(
+                      label: 'Install',
+                      icon: Icons.watch,
+                      onPressed: () {
+                        final firstItem = items.isNotEmpty && items.first is Map
+                            ? Map<String, dynamic>.from(items.first as Map)
+                            : <String, dynamic>{};
+                        WatchFaceOrderHelper.installFromOrder(order, firstItem);
+                      },
+                      isPrimary: true,
+                      color: AppColors.secondary,
+                    ),
+                  )
+                else if (!isDigitalOrder &&
+                    DigitalProductType.canCancelOrder(order, items: items))
+                  Expanded(
+                    child: _buildCompactButton(
+                      label: 'Cancel',
                       onPressed: () => _showCancelDialog(controller, order['id']),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                        side: BorderSide(color: AppColors.error),
-                        padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                        ),
-                      ),
-                      icon: Icon(Icons.cancel_outlined, size: ScreenSize.iconSmall),
-                      label: Text('Cancel Order', style: TextStyle(fontSize: ScreenSize.textMedium)),
+                      isPrimary: true,
+                      color: AppColors.error,
+                    ),
+                  )
+                else if (hasPhysicalItems && status == 'delivered')
+                  Expanded(
+                    child: _buildCompactButton(
+                      label: 'Reorder',
+                      onPressed: () => controller.reorder(order['id']),
+                      isPrimary: true,
                     ),
                   ),
-                ],
-                
-                // Return button (for delivered orders)
-                if (status == 'delivered') ...[
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _showReturnDialog(controller, order['id']),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.warning,
-                        side: BorderSide(color: AppColors.warning),
-                        padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                        ),
-                      ),
-                      icon: Icon(Icons.assignment_return, size: ScreenSize.iconSmall),
-                      label: Text('Return Order', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                    ),
-                  ),
-                ],
-                
-                // Reorder and Invoice buttons (for delivered or shipped orders)
-                if (status == 'delivered' || status == 'shipped') ...[
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => controller.reorder(order['id']),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.textWhite,
-                            padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                            ),
-                          ),
-                          icon: Icon(Icons.shopping_cart, size: ScreenSize.iconSmall),
-                          label: Text('Reorder', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                        ),
-                      ),
-                      SizedBox(width: ScreenSize.spacingSmall),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => controller.downloadInvoice(order['id'] as int),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: BorderSide(color: AppColors.primary),
-                            padding: EdgeInsets.symmetric(vertical: ScreenSize.spacingSmall),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                            ),
-                          ),
-                          icon: Icon(Icons.download, size: ScreenSize.iconSmall),
-                          label: Text('Invoice', style: TextStyle(fontSize: ScreenSize.textMedium)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
@@ -463,16 +485,72 @@ class OrdersScreen extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildCompactButton({
+    required String label,
+    required VoidCallback onPressed,
+    IconData? icon,
+    bool isPrimary = true,
+    Color? color,
+  }) {
+    final effectiveColor = color ?? AppColors.primary;
+    return SizedBox(
+      height: ScreenSize.screenWidth >= 1200 ? 36 : (ScreenSize.screenWidth >= 1000 ? 36 : (ScreenSize.screenWidth >= 768 ? 32 : 32)),
+      child: isPrimary
+          ? ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: icon != null ? Icon(icon, size: ScreenSize.screenWidth >= 1200 ? 16 : (ScreenSize.screenWidth >= 1000 ? 16 : (ScreenSize.screenWidth >= 768 ? 14 : 16))) : const SizedBox.shrink(),
+              label: Text(label, style: TextStyle(
+                fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)), 
+                fontWeight: FontWeight.w600
+              )),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: effectiveColor,
+                foregroundColor: AppColors.textWhite,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 10 : (ScreenSize.screenWidth >= 1000 ? 10 : (ScreenSize.screenWidth >= 768 ? 8 : 10)))),
+                padding: EdgeInsets.zero,
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: icon != null ? Icon(icon, size: ScreenSize.screenWidth >= 1200 ? 16 : (ScreenSize.screenWidth >= 1000 ? 16 : (ScreenSize.screenWidth >= 768 ? 14 : 16))) : const SizedBox.shrink(),
+              label: Text(label, style: TextStyle(
+                fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)), 
+                fontWeight: FontWeight.w600
+              )),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: effectiveColor,
+                side: BorderSide(color: effectiveColor.withOpacity(0.5)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 10 : (ScreenSize.screenWidth >= 1000 ? 10 : (ScreenSize.screenWidth >= 768 ? 8 : 10)))),
+                padding: EdgeInsets.zero,
+              ),
+            ),
+    );
+  }
   
   Widget _buildOrderItemPreview(Map<String, dynamic> item) {
-    final imageSize = ScreenSize.widthPercent(15);
+    final imageSize = ScreenSize.screenWidth >= 1200 ? 56.0 : (ScreenSize.screenWidth >= 1000 ? 56.0 : (ScreenSize.screenWidth >= 768 ? 48.0 : 48.0));
     return Row(
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-          child: _orderPreviewImage(item['image'], imageSize),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 12 : (ScreenSize.screenWidth >= 1000 ? 12 : (ScreenSize.screenWidth >= 768 ? 10 : 12))),
+            border: Border.all(color: AppColors.border.withOpacity(0.5)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1200 ? 12 : (ScreenSize.screenWidth >= 1000 ? 12 : (ScreenSize.screenWidth >= 768 ? 10 : 12))),
+            child: _orderPreviewImage(item, imageSize),
+          ),
         ),
-        SizedBox(width: ScreenSize.spacingMedium),
+        SizedBox(width: ScreenSize.screenWidth >= 1200 ? 8 : (ScreenSize.screenWidth >= 1000 ? 8 : (ScreenSize.screenWidth >= 768 ? 6 : 8))),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,19 +558,19 @@ class OrdersScreen extends StatelessWidget {
               Text(
                 item['product_name'] ?? '',
                 style: TextStyle(
-                  fontSize: ScreenSize.textMedium,
+                  fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: ScreenSize.spacingExtraSmall),
+              SizedBox(height: ScreenSize.screenWidth >= 1200 ? 2 : (ScreenSize.screenWidth >= 1000 ? 2 : (ScreenSize.screenWidth >= 768 ? 1 : 2))),
               Text(
-                'Qty: ${item['quantity'] ?? 1} × \$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
+                'Qty: ${item['quantity'] ?? 1} • \$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
                 style: TextStyle(
-                  fontSize: ScreenSize.textSmall,
-                  color: AppColors.textSecondary,
+                  fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 1000 ? ScreenSize.textExtraSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textExtraSmall)),
+                  color: AppColors.textSecondary.withOpacity(0.8),
                 ),
               ),
             ],
@@ -502,23 +580,29 @@ class OrdersScreen extends StatelessWidget {
     );
   }
 
-  Widget _orderPreviewImage(dynamic image, double imageSize) {
-    final url = (image?.toString() ?? '').trim();
-    if (url.isEmpty) {
-      return Container(
-        width: imageSize,
-        height: imageSize,
-        color: AppColors.backgroundGrey,
-        child: Icon(Icons.image_not_supported, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
+  Widget _orderPreviewImage(Map<String, dynamic> item, double imageSize) {
+    if (item['watch_face_preview'] != null) {
+      return WatchFaceOrderHelper.buildPreviewImage(
+        item,
+        size: imageSize,
+        cacheKeyPrefix: 'order_preview',
       );
     }
-    return CachedNetworkImage(
-      imageUrl: url,
+    return SizedBox(
       width: imageSize,
       height: imageSize,
-      fit: BoxFit.cover,
-      placeholder: (context, u) => Container(width: imageSize, height: imageSize, color: AppColors.backgroundGrey, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-      errorWidget: (context, u, e) => Container(width: imageSize, height: imageSize, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, color: AppColors.textTertiary, size: ScreenSize.iconMedium)),
+      child: ProductCardImage(
+        product: {
+          'id': item['product_id'] ?? item['id'],
+          'image': item['image'],
+          'banner': item['banner'],
+          'is_digital': item['is_digital'],
+          'category_id': item['category_id'],
+          'media_type': item['media_type'],
+          'is_sticker_pack': item['is_sticker_pack'],
+        },
+        cacheKeyPrefix: 'order_preview',
+      ),
     );
   }
 
@@ -547,6 +631,8 @@ class OrdersScreen extends StatelessWidget {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
+      case 'paid':
+        return AppColors.success;
       case 'pending':
         return AppColors.warning;
       case 'processing':
@@ -565,6 +651,8 @@ class OrdersScreen extends StatelessWidget {
   String _formatStatus(String status) {
     final statusLower = status.toLowerCase();
     switch (statusLower) {
+      case 'paid':
+        return 'Paid';
       case 'pending':
         return 'Pending';
       case 'processing':

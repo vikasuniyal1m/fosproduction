@@ -1,117 +1,66 @@
 #!/bin/bash
+# Smallest IPA for App Store (default).
+# Usage:
+#   ./build_ipa.sh [app-store|ad-hoc|development]
+#   FAST=1 ./build_ipa.sh        # faster, slightly larger
+#   CLEAN=1 ./build_ipa.sh       # full clean + pod reinstall
 
-# Build IPA Script for Flutter iOS App
-# Usage: ./build_ipa.sh [app-store|ad-hoc|development]
+set -e
 
-set -e  # Exit on error
-
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Get distribution method (default: ad-hoc)
-METHOD=${1:-ad-hoc}
+METHOD=${1:-app-store}
 
-echo -e "${GREEN}🚀 Starting IPA Build Process...${NC}"
-echo -e "${YELLOW}Distribution Method: ${METHOD}${NC}\n"
-
-# Step 1: Navigate to project root
-echo -e "${GREEN}Step 1: Preparing project...${NC}"
 cd "$(dirname "$0")"
-pwd
 
-# Step 2: Clean
-echo -e "${GREEN}Step 2: Cleaning previous builds...${NC}"
-flutter clean
+if [ "${CLEAN:-0}" = "1" ]; then
+  echo -e "${GREEN}Full clean requested${NC}"
+  flutter clean
+  rm -rf ios/Pods ios/Podfile.lock ios/build
+fi
+
+echo -e "${GREEN}Step 1: pub get${NC}"
 flutter pub get
 
-# Step 3: Clean iOS
-echo -e "${GREEN}Step 3: Cleaning iOS build folder...${NC}"
+echo -e "${GREEN}Step 2: CocoaPods (only if out of sync)${NC}"
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
 cd ios
-rm -rf build
-rm -rf Pods Podfile.lock
-
-# Step 4: Install CocoaPods
-echo -e "${GREEN}Step 4: Installing CocoaPods dependencies...${NC}"
-pod install
-
-# Step 5: Build iOS Release
-echo -e "${GREEN}Step 5: Building iOS release...${NC}"
-cd ..
-flutter build ios --release
-
-# Step 6: Create Archive
-echo -e "${GREEN}Step 6: Creating archive (this may take 5-10 minutes)...${NC}"
-cd ios
-xcodebuild -workspace Runner.xcworkspace \
-  -scheme Runner \
-  -configuration Release \
-  -archivePath build/Runner.xcarchive \
-  -destination generic/platform=iOS \
-  archive
-
-# Step 7: Create ExportOptions.plist
-echo -e "${GREEN}Step 7: Creating ExportOptions.plist...${NC}"
-
-# Get Team ID (try to extract from existing config)
-TEAM_ID=$(grep -o 'DEVELOPMENT_TEAM = [^;]*' Runner.xcodeproj/project.pbxproj | head -1 | cut -d' ' -f3 || echo "YOUR_TEAM_ID")
-
-cat > ExportOptions.plist << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>${METHOD}</string>
-    <key>teamID</key>
-    <string>${TEAM_ID}</string>
-    <key>uploadBitcode</key>
-    <false/>
-    <key>compileBitcode</key>
-    <false/>
-    <key>signingStyle</key>
-    <string>automatic</string>
-EOF
-
-if [ "$METHOD" = "app-store" ]; then
-    cat >> ExportOptions.plist << EOF
-    <key>uploadSymbols</key>
-    <true/>
-EOF
-fi
-
-cat >> ExportOptions.plist << EOF
-</dict>
-</plist>
-EOF
-
-echo -e "${YELLOW}⚠️  Please verify Team ID in ExportOptions.plist: ${TEAM_ID}${NC}"
-echo -e "${YELLOW}   If incorrect, edit ios/ExportOptions.plist before continuing${NC}"
-read -p "Press Enter to continue or Ctrl+C to cancel..."
-
-# Step 8: Export IPA
-echo -e "${GREEN}Step 8: Exporting IPA (this may take 1-2 minutes)...${NC}"
-rm -rf build/ipa
-xcodebuild -exportArchive \
-  -archivePath build/Runner.xcarchive \
-  -exportPath build/ipa \
-  -exportOptionsPlist ExportOptions.plist
-
-# Step 9: Verify
-echo -e "${GREEN}Step 9: Verifying IPA...${NC}"
-if [ -f "build/ipa/Runner.ipa" ]; then
-    IPA_SIZE=$(du -h build/ipa/Runner.ipa | cut -f1)
-    echo -e "${GREEN}✅ IPA created successfully!${NC}"
-    echo -e "${GREEN}📍 Location: $(pwd)/build/ipa/Runner.ipa${NC}"
-    echo -e "${GREEN}📦 Size: ${IPA_SIZE}${NC}"
+if [ ! -f Pods/Manifest.lock ] || ! diff -q Podfile.lock Pods/Manifest.lock >/dev/null 2>&1; then
+  pod install
 else
-    echo -e "${RED}❌ IPA file not found!${NC}"
-    exit 1
+  echo "Pods already in sync — skipping pod install"
+fi
+cd ..
+
+mkdir -p build/symbols
+
+FLUTTER_FLAGS=(
+  --release
+  --obfuscate
+  --split-debug-info=build/symbols
+  --tree-shake-icons
+)
+
+if [ "${FAST:-0}" = "1" ]; then
+  echo -e "${YELLOW}FAST=1: skipping obfuscate (larger IPA)${NC}"
+  FLUTTER_FLAGS=(--release --tree-shake-icons)
 fi
 
-echo -e "\n${GREEN}🎉 Build complete!${NC}"
+echo -e "${GREEN}Step 3: Build IPA (release, stripped)${NC}"
+flutter build ipa --release "${FLUTTER_FLAGS[@]}"
 
+IPA_FILE=$(find build/ios/ipa -name "*.ipa" 2>/dev/null | head -1)
+if [ -n "$IPA_FILE" ] && [ -f "$IPA_FILE" ]; then
+  IPA_BYTES=$(stat -f%z "$IPA_FILE" 2>/dev/null || stat -c%s "$IPA_FILE")
+  IPA_MB=$(echo "scale=1; $IPA_BYTES / 1048576" | bc)
+  echo -e "${GREEN}IPA ready: ${IPA_FILE} (${IPA_MB} MB)${NC}"
+else
+  echo -e "${RED}IPA not found under build/ios/ipa${NC}"
+  exit 1
+fi
 
-
+echo -e "${GREEN}Build complete.${NC}"

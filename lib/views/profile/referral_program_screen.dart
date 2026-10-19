@@ -5,6 +5,7 @@ import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/referral_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 
 /// Referral Program Screen
 /// Shows user's referral code, statistics, and referred users
@@ -32,23 +33,26 @@ class ReferralProgramScreen extends StatelessWidget {
         centerTitle: true,
         toolbarHeight: ScreenSize.buttonHeightMedium,
       ),
-      body: Obx(() => controller.isLoading.value
+      body: Obx(() => SilentLoading.blockUi(
+            isLoading: controller.isLoading.value,
+            hasContent: controller.referralCode.value.isNotEmpty,
+          )
           ? const LoadingWidget()
           : RefreshIndicator(
               onRefresh: controller.refresh,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.all(ScreenSize.paddingMedium),
+                padding: EdgeInsets.all(ScreenSize.paddingSmall),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Referral Code Card
                     _buildReferralCodeCard(controller),
-                    SizedBox(height: ScreenSize.spacingMedium),
+                    SizedBox(height: ScreenSize.spacingSmall),
                     
                     // Statistics
                     _buildStatistics(controller),
-                    SizedBox(height: ScreenSize.spacingMedium),
+                    SizedBox(height: ScreenSize.spacingSmall),
                     
                     // Referred Users
                     _buildReferredUsers(controller),
@@ -103,7 +107,7 @@ class ReferralProgramScreen extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(height: ScreenSize.spacingMedium),
+          SizedBox(height: ScreenSize.spacingSmall),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

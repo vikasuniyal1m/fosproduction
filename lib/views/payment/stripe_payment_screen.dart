@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../../controllers/stripe_payment_controller.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/loading_widget.dart';
-import '../../controllers/stripe_payment_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/responsive_button.dart';
 
 /// Stripe Payment Screen
@@ -29,8 +30,9 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.put(StripePaymentController());
-    
+    final controller = GetXRegistry.stripePayment();
+    final isLens = controller.paymentPurpose.value == 'fos_lens';
+
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
@@ -39,10 +41,10 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
         await controller.cancelPayment();
       },
       child: Scaffold(
-        backgroundColor: AppColors.backgroundLight,
+        backgroundColor: AppColors.background,
         resizeToAvoidBottomInset: true, // Allow scaffold to resize when keyboard appears
         appBar: AppBar(
-          title: const Text('Secure Payment'),
+          title: Text(isLens ? 'FOS Lens — \$0.99' : 'Secure Payment — \$${controller.amount.value.toStringAsFixed(2)}'),
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.textWhite,
           elevation: 0,
@@ -116,7 +118,7 @@ class _StripePaymentScreenState extends State<StripePaymentScreen> {
             SizedBox(height: ScreenSize.spacingLarge),
             ResponsiveButton(
                   onPressed: () => controller.cancelPayment(),
-                  text: 'Back to Cart',
+                  text: controller.paymentPurpose.value == 'fos_lens' ? 'Back' : 'Back to Cart',
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.textWhite,
                 ),

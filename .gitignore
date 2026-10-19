@@ -43,3 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+/android/.gradle/
+/ios/Pods/
+/ios/build/
+
+# Not part of mobile app bundle (keep locally if needed for backend)
+admin/
+fruitswatchfaceinte/
+node_modules/
+modelfile
+*.zip
+lib.zip
+lib 2.zip

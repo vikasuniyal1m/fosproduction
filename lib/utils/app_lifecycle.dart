@@ -5,6 +5,12 @@ import '../controllers/cart_controller.dart';
 import '../controllers/wishlist_controller.dart';
 import '../controllers/checkout_controller.dart';
 import '../controllers/search_controller.dart' as search_ctrl;
+import '../controllers/home_controller.dart';
+import '../controllers/product_controller.dart';
+import '../controllers/profile_controller.dart';
+import '../controllers/auth_controller.dart';
+import '../services/notification_service.dart';
+import '../services/cart_sync_service.dart';
 import 'cache_manager.dart';
 import '../routes/app_routes.dart';
 
@@ -305,6 +311,9 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
       _handleBackgroundDuration(duration);
     }
     
+    // Restart background processes
+    _startBackgroundProcesses();
+    
     // Refresh data if needed
     _refreshAppData();
   }
@@ -321,6 +330,9 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
     isAppPaused.value = true;
     _lastPausedTime = DateTime.now();
     
+    // Stop background processes to save resources
+    _stopBackgroundProcesses();
+    
     // Save important data
     _saveAppState();
   }
@@ -329,6 +341,13 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   void _onAppDetached() {
     isAppInForeground.value = false;
     isAppInBackground.value = true;
+    
+    // Stop all background processes
+    _stopBackgroundProcesses();
+    
+    // Clear all controllers to prevent memory leaks
+    _cleanupControllers();
+    
     _saveAppState();
   }
   
@@ -336,6 +355,10 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   void _onAppHidden() {
     isAppInForeground.value = false;
     isAppInBackground.value = true;
+    
+    // Stop background processes
+    _stopBackgroundProcesses();
+    
     _saveAppState();
   }
   
@@ -349,8 +372,39 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   
   /// Refresh app data when coming back to foreground
   void _refreshAppData() {
-    // Override this in your controllers to refresh data
-    // Example: CartController.instance.refreshCart();
+    debugPrint('[AppLifecycle] Refreshing app data after resume...');
+    
+    // Refresh cart sync service
+    try {
+      if (Get.isRegistered<CartSyncService>()) {
+        CartSyncService.to.forceSync();
+        debugPrint('[AppLifecycle] Cart sync service refreshed');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing cart sync: $e');
+    }
+    
+    // Refresh cart controller directly
+    try {
+      if (Get.isRegistered<CartController>()) {
+        final cartController = Get.find<CartController>();
+        cartController.forceRefreshCart();
+        debugPrint('[AppLifecycle] Cart controller refreshed');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing cart controller: $e');
+    }
+    
+    // Refresh notifications
+    try {
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.pollNow();
+        debugPrint('[AppLifecycle] Notifications polled immediately');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing notifications: $e');
+    }
   }
   
   /// Save app state before going to background
@@ -510,6 +564,72 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   
   /// Check if app is currently in background
   bool get isBackground => isAppInBackground.value;
+  
+  /// Stop background processes when app goes to background
+  void _stopBackgroundProcesses() {
+    try {
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.setAppForeground(false);
+        debugPrint('[AppLifecycle] Notification polling slowed (background)');
+      }
+      
+      debugPrint('[AppLifecycle] Background mode updated');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error stopping background processes: $e');
+    }
+  }
+  
+  /// Start background processes when app comes to foreground
+  void _startBackgroundProcesses() {
+    try {
+      if (Get.isRegistered<NotificationService>() && CacheManager.isLoggedIn()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.setAppForeground(true);
+        debugPrint('[AppLifecycle] Notification polling fast (foreground)');
+      }
+      
+      debugPrint('[AppLifecycle] Foreground mode updated');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error starting background processes: $e');
+    }
+  }
+  
+  /// Cleanup controllers to prevent memory leaks
+  void _cleanupControllers() {
+    try {
+      // Clean up controllers by type checking
+      _cleanupController<CartController>('CartController');
+      _cleanupController<WishlistController>('WishlistController');
+      _cleanupController<CheckoutController>('CheckoutController');
+      _cleanupController<search_ctrl.SearchController>('SearchController');
+      _cleanupController<HomeController>('HomeController');
+      _cleanupController<ProductController>('ProductController');
+      _cleanupController<ProfileController>('ProfileController');
+      _cleanupController<AuthController>('AuthController');
+      _cleanupController<NotificationService>('NotificationService');
+      
+      debugPrint('[AppLifecycle] Controller cleanup completed');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error during controller cleanup: $e');
+    }
+  }
+  
+  /// Helper method to cleanup a specific controller type
+  void _cleanupController<T>(String controllerName) {
+    try {
+      if (Get.isRegistered<T>()) {
+        final controller = Get.find<T>();
+        if (controller is GetxController) {
+          controller.onClose();
+        }
+        Get.delete<T>();
+        debugPrint('[AppLifecycle] Cleaned up: $controllerName');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error cleaning up $controllerName: $e');
+    }
+  }
   
   /// Get time spent in background (if available)
   Duration? get backgroundDuration {

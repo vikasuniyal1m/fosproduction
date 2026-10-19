@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
+import '../utils/data_cache.dart';
+import '../utils/cache_manager.dart';
 
 /// Loyalty Points Controller
 /// Handles loyalty points logic and API calls
@@ -31,8 +33,33 @@ class LoyaltyController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _loadCachedLoyalty();
     loadPoints();
     loadHistory();
+  }
+
+  void _loadCachedLoyalty() {
+    final cached = DataCache.loadMap(DataCache.loyalty);
+    if (cached == null) return;
+    currentPoints.value = int.tryParse(cached['currentPoints']?.toString() ?? '0') ?? 0;
+    totalEarned.value = int.tryParse(cached['totalEarned']?.toString() ?? '0') ?? 0;
+    totalOrders.value = int.tryParse(cached['totalOrders']?.toString() ?? '0') ?? 0;
+    pointsPerOrder.value = int.tryParse(cached['pointsPerOrder']?.toString() ?? '0') ?? 0;
+    if (cached['history'] is List) {
+      history.value = (cached['history'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+  }
+
+  Future<void> _saveLoyaltyCache() async {
+    await DataCache.saveMap(DataCache.loyalty, {
+      'currentPoints': currentPoints.value,
+      'totalEarned': totalEarned.value,
+      'totalOrders': totalOrders.value,
+      'pointsPerOrder': pointsPerOrder.value,
+      'history': history.toList(),
+    });
   }
   
   @override
@@ -43,7 +70,9 @@ class LoyaltyController extends GetxController {
   
   /// Load user's loyalty points
   Future<void> loadPoints() async {
-    isLoading.value = true;
+    if (!CacheManager.hasData(DataCache.loyalty)) {
+      isLoading.value = true;
+    }
     try {
       final response = await _apiService.get(ApiEndpoints.loyaltyPoints);
       final data = ApiService.handleResponse(response);
@@ -52,6 +81,7 @@ class LoyaltyController extends GetxController {
       totalEarned.value = data['total_earned'] ?? 0;
       totalOrders.value = data['total_orders'] ?? 0;
       pointsPerOrder.value = data['points_per_order'] ?? 0;
+      await _saveLoyaltyCache();
     } catch (e) {
       print('[Loyalty] Error loading points: $e');
       Get.snackbar('Error', 'Failed to load loyalty points', 
@@ -63,7 +93,9 @@ class LoyaltyController extends GetxController {
   
   /// Load points history
   Future<void> loadHistory({int page = 1}) async {
-    isLoadingHistory.value = true;
+    if (page == 1 && history.isEmpty) {
+      isLoadingHistory.value = true;
+    }
     try {
       final response = await _apiService.get(
         '${ApiEndpoints.loyaltyHistory}?page=$page&limit=20'
@@ -80,6 +112,7 @@ class LoyaltyController extends GetxController {
       currentPage.value = pagination['current_page'] ?? 1;
       totalPages.value = pagination['total_pages'] ?? 1;
       hasMore.value = pagination['has_next'] ?? false;
+      await _saveLoyaltyCache();
     } catch (e) {
       print('[Loyalty] Error loading history: $e');
       Get.snackbar('Error', 'Failed to load points history', 

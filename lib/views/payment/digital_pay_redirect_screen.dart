@@ -2,20 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
-import '../../controllers/checkout_controller.dart';
+import '../../utils/getx_registry.dart';
 /// Digital product ke liye: checkout dikhaye bina seedha Stripe pe bhejne wala screen.
 /// Sirf loading dikhata hai, phir Stripe open karta hai.
-class DigitalPayRedirectScreen extends StatelessWidget {
+class DigitalPayRedirectScreen extends StatefulWidget {
   const DigitalPayRedirectScreen({super.key});
+
+  @override
+  State<DigitalPayRedirectScreen> createState() => _DigitalPayRedirectScreenState();
+}
+
+class _DigitalPayRedirectScreenState extends State<DigitalPayRedirectScreen> {
+  String _status = 'Redirecting to payment...';
+  bool _started = false;
 
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.put(CheckoutController());
+    final controller = GetXRegistry.checkout();
 
     return Obx(() {
-      if (controller.isDigitalQuickPay && controller.items.isNotEmpty && !controller.isLoading.value) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => controller.tryGoDirectToStripe());
+      if (!_started &&
+          controller.isDigitalQuickPay &&
+          controller.items.isNotEmpty &&
+          !controller.isLoading.value) {
+        _started = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await controller.tryGoDirectToStripe();
+        });
       }
       return Scaffold(
         backgroundColor: AppColors.background,
@@ -38,7 +52,8 @@ class DigitalPayRedirectScreen extends StatelessWidget {
               CircularProgressIndicator(color: AppColors.primary),
               SizedBox(height: ScreenSize.spacingLarge),
               Text(
-                'Redirecting to payment...',
+                _status,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: ScreenSize.textMedium,
                   color: AppColors.textSecondary,

@@ -36,7 +36,8 @@ class DigitalPreviewPlayerScreen extends StatefulWidget {
   State<DigitalPreviewPlayerScreen> createState() => _DigitalPreviewPlayerScreenState();
 }
 
-class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen> {
+class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
+    with WidgetsBindingObserver {
   VideoPlayerController? _videoController;
   AudioPlayer? _audioPlayer;
   Timer? _limitTimer;
@@ -51,9 +52,34 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startPreview();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _limitTimer?.cancel();
+    _countdownTimer?.cancel();
+    _videoController?.dispose();
+    _audioPlayer?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      // App going to background - stop/pause media
+      if (!_previewEnded) {
+        _audioPlayer?.pause();
+        _videoController?.pause();
+      }
+    }
+  }
 
   /// On mobile: fetch preview bytes and save to temp file. On web: returns null (play from URL).
   Future<String?> _fetchPreviewToFile() async {
@@ -160,53 +186,19 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
   }
 
   void _showPayPopup() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.lock, color: AppColors.primary, size: 28),
-            SizedBox(width: 10),
-            Text('Preview ended', style: TextStyle(fontSize: ScreenSize.textLarge)),
-          ],
-        ),
-        content: Text(
-          'You\'ve watched the first ${widget.durationSeconds} seconds. Pay with Stripe to unlock full access and download MP3/MP4 for lifetime.',
-          style: TextStyle(fontSize: ScreenSize.textSmall, color: AppColors.textSecondary, height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Get.back();
-            },
-            child: Text('Maybe Later', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Get.back();
-              widget.onPayPressed();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: Text('Pay & Download'),
-          ),
-        ],
-      ),
-    );
+    setState(() {
+      _previewEnded = true;
+    });
   }
 
-  @override
-  void dispose() {
-    _limitTimer?.cancel();
-    _countdownTimer?.cancel();
-    _videoController?.dispose();
-    _audioPlayer?.dispose();
-    super.dispose();
+  void _replayPreview() {
+    setState(() {
+      _previewEnded = false;
+      _elapsedSeconds = 0;
+      _loading = false;
+      _error = null;
+    });
+    _startPreview();
   }
 
   Widget _buildImagePreview() {
@@ -260,9 +252,9 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
 
     if (_loading) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.background,
         appBar: AppBar(
-          backgroundColor: Colors.black,
+          backgroundColor: AppColors.primary,
           leading: IconButton(
             icon: Icon(Icons.close, color: Colors.white),
             onPressed: () => Get.back(),
@@ -284,9 +276,9 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
 
     if (_error != null) {
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.background,
         appBar: AppBar(
-          backgroundColor: Colors.black,
+          backgroundColor: AppColors.primary,
           leading: IconButton(
             icon: Icon(Icons.close, color: Colors.white),
             onPressed: () => Get.back(),
@@ -310,9 +302,9 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
     }
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.primary,
         leading: IconButton(
           icon: Icon(Icons.close, color: Colors.white),
           onPressed: () => Get.back(),
@@ -322,73 +314,156 @@ class _DigitalPreviewPlayerScreenState extends State<DigitalPreviewPlayerScreen>
           style: TextStyle(color: Colors.white, fontSize: ScreenSize.textMedium),
         ),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Center(
-                child: _showImageInsteadOfVideo && widget.productImageUrl != null
-                    ? _buildImagePreview()
-                    : widget.mediaType == 'video' && _videoController != null && _videoController!.value.isInitialized
-                        ? AspectRatio(
-                            aspectRatio: _videoController!.value.aspectRatio,
-                            child: VideoPlayer(_videoController!),
-                          )
-                        : widget.mediaType == 'audio'
-                            ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.music_note, size: 80, color: AppColors.primary.withOpacity(0.8)),
-                              SizedBox(height: 16),
-                              Text(
-                                widget.productName ?? 'Audio preview',
-                                style: TextStyle(color: Colors.white70, fontSize: ScreenSize.textSmall),
-                                textAlign: TextAlign.center,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: _showImageInsteadOfVideo && widget.productImageUrl != null
+                        ? _buildImagePreview()
+                        : widget.mediaType == 'video' && _videoController != null && _videoController!.value.isInitialized
+                            ? AspectRatio(
+                                aspectRatio: _videoController!.value.aspectRatio,
+                                child: VideoPlayer(_videoController!),
+                              )
+                            : widget.mediaType == 'audio'
+                                ? Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.music_note, size: 80, color: AppColors.primary.withOpacity(0.8)),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    widget.productName ?? 'Audio preview',
+                                    style: TextStyle(color: Colors.white70, fontSize: ScreenSize.textSmall),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  SizedBox(height: 24),
+                                  if (_audioPlayer != null)
+                                    StreamBuilder<Duration>(
+                                      stream: _audioPlayer!.positionStream,
+                                      builder: (context, snapshot) {
+                                        final pos = snapshot.data ?? Duration.zero;
+                                        final limit = Duration(seconds: widget.durationSeconds);
+                                        final sec = pos.inSeconds.clamp(0, widget.durationSeconds);
+                                        return Padding(
+                                          padding: EdgeInsets.symmetric(horizontal: 24),
+                                          child: Column(
+                                            children: [
+                                              LinearProgressIndicator(
+                                                value: sec / widget.durationSeconds,
+                                                backgroundColor: Colors.white24,
+                                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                                              ),
+                                              SizedBox(height: 8),
+                                              Text(
+                                                '$sec / ${widget.durationSeconds} sec',
+                                                style: TextStyle(color: Colors.white54, fontSize: 12),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
+                              )
+                                : Center(
+                                    child: CircularProgressIndicator(color: AppColors.primary),
+                                  ),
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.all(ScreenSize.spacingMedium),
+                  child: Text(
+                    'Preview ends in ${widget.durationSeconds} seconds • Pay to unlock full access',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Pay Button Overlay
+          if (_previewEnded)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.8),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.lock,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Preview Ended',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Pay with Stripe to unlock full access and download',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Replay Preview Button
+                          OutlinedButton.icon(
+                            onPressed: _replayPreview,
+                            icon: const Icon(Icons.replay, size: 18),
+                            label: const Text('Replay'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white, width: 1.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              SizedBox(height: 24),
-                              if (_audioPlayer != null)
-                                StreamBuilder<Duration>(
-                                  stream: _audioPlayer!.positionStream,
-                                  builder: (context, snapshot) {
-                                    final pos = snapshot.data ?? Duration.zero;
-                                    final limit = Duration(seconds: widget.durationSeconds);
-                                    final sec = pos.inSeconds.clamp(0, widget.durationSeconds);
-                                    return Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 24),
-                                      child: Column(
-                                        children: [
-                                          LinearProgressIndicator(
-                                            value: sec / widget.durationSeconds,
-                                            backgroundColor: Colors.white24,
-                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                                          ),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            '$sec / ${widget.durationSeconds} sec',
-                                            style: TextStyle(color: Colors.white54, fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                            ],
-                          )
-                        : Center(
-                            child: CircularProgressIndicator(color: AppColors.primary),
+                            ),
                           ),
+                          const SizedBox(width: 12),
+                          // Pay with Stripe - Unlock Download Button
+                          ElevatedButton(
+                            onPressed: () {
+                              Get.back();
+                              widget.onPayPressed();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Pay with Stripe - Unlock Download',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            Padding(
-              padding: EdgeInsets.all(ScreenSize.spacingMedium),
-              child: Text(
-                'Preview ends in ${widget.durationSeconds} seconds • Pay to unlock full access',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

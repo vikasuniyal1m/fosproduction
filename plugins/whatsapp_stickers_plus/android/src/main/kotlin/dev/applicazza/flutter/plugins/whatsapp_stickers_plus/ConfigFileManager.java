@@ -1,0 +1,194 @@
+package dev.applicazza.flutter.plugins.whatsapp_stickers_plus;
+
+import android.content.ContentResolver;
+import android.content.Context;
+import android.content.res.AssetFileDescriptor;
+import android.content.res.AssetManager;
+import android.net.Uri;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.util.PathUtils;
+
+import static dev.applicazza.flutter.plugins.whatsapp_stickers_plus.StickerPackLoader.getStickerAssetUri;
+
+public class ConfigFileManager {
+
+    public static final String CONTENT_FILE_NAME = "sticker_packs.json";
+
+    static List<StickerPack> getStickerPacks(Context context) {
+        List<StickerPack> stickerPackList;
+        File file = new File(getConfigFilePath(context));
+        if (!file.exists()) {
+            return new ArrayList<StickerPack>();
+        }
+        try (InputStream contentsInputStream = new FileInputStream(file)) {
+            stickerPackList = ContentFileParser.parseStickerPacks(contentsInputStream);
+        } catch (IOException | IllegalStateException e) {
+            throw new RuntimeException("config file has some issues hahaha: " + e.getMessage(), e);
+        }
+        return stickerPackList;
+    }
+
+    static StickerPack fromMethodCall(Context context, MethodCall call) throws IOException {
+        String identifier = call.argument("identifier");
+        String name = call.argument("name");
+        String publisher = call.argument("publisher");
+        String traySource = StickerFileUtils.decodeSourcePath(call.argument("trayImageFileName"));
+        String publisherWebsite = call.argument("publisherWebsite");
+        String privacyPolicyWebsite = call.argument("privacyPolicyWebsite");
+        String licenseAgreementWebsite = call.argument("licenseAgreementWebsite");
+        Map<String, List<String>> stickers = call.argument("stickers");
+
+        File packDir = StickerFileUtils.getPackStorageDir(context, identifier);
+        StickerFileUtils.deleteRecursive(packDir);
+        if (!packDir.mkdirs()) {
+            throw new IOException("Cannot create pack dir: " + packDir.getAbsolutePath());
+        }
+
+        final String trayFileName = "tray.png";
+        StickerFileUtils.copyFile(new File(traySource), new File(packDir, trayFileName));
+        Log.d("ConfigFileManager", "Staged tray for " + identifier + " at " + packDir.getAbsolutePath());
+
+        List<Sticker> newStickers = new ArrayList<>();
+        assert stickers != null;
+        int index = 1;
+        for (Map.Entry<String, List<String>> entry : stickers.entrySet()) {
+            String sourcePath = StickerFileUtils.decodeSourcePath(entry.getKey());
+            String destName = String.format("%02d.webp", index++);
+            StickerFileUtils.copyFile(new File(sourcePath), new File(packDir, destName));
+            newStickers.add(new Sticker(destName, entry.getValue()));
+        }
+
+        String imageDataVersion = String.valueOf(System.currentTimeMillis());
+        StickerPack newStickerPack = new StickerPack(identifier, name, publisher, trayFileName, "",
+                publisherWebsite, privacyPolicyWebsite, licenseAgreementWebsite, imageDataVersion, true);
+        newStickerPack.setStickers(newStickers);
+        newStickerPack.setAndroidPlayStoreLink("");
+        newStickerPack.setIosAppStoreLink("");
+        Log.d("ConfigFileManager", "Pack " + identifier + " staged with " + newStickers.size() + " stickers");
+        return newStickerPack;
+    }
+
+    static boolean addNewPack(Context context, StickerPack stickerPack) throws JSONException, InvalidPackException {
+        List<StickerPack> stickerPacks = new ArrayList<StickerPack>();
+        for (StickerPack s : getStickerPacks(context)) {
+            if (!s.identifier.equals(stickerPack.identifier)) {
+                stickerPacks.add(s);
+            }
+        }
+        stickerPacks.add(stickerPack);
+        return updateConfigFile(context, stickerPacks);
+    }
+
+    static String getFileName(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        if (name.contains("assets://")) {
+            name = name.replace("assets://", "");
+            return name.replace("/", "_MZN_AD_");
+        }
+        if (name.contains("file://") || name.contains("_MZN_FD_")) {
+            if (name.contains("file://")) {
+                name = name.replace("file://", "");
+            }
+            return name.replace("/", "_MZN_FD_");
+        }
+        // Simple staged name (tray.png, 01.webp)
+        return name;
+    }
+
+    static boolean updateConfigFile(Context context, List<StickerPack> stickerPacks)
+            throws JSONException, InvalidPackException {
+        JSONObject mObj = new JSONObject();
+        if (stickerPacks.size() <= 0) {
+            mObj.put("android_play_store_link", "");
+            mObj.put("ios_app_store_link", "");
+        } else {
+            mObj.put("android_play_store_link", stickerPacks.get(0).androidPlayStoreLink);
+            mObj.put("ios_app_store_link", stickerPacks.get(0).iosAppStoreLink);
+        }
+        JSONArray _packs = new JSONArray();
+        for (StickerPack s : stickerPacks) {
+            JSONObject obj = new JSONObject();
+            obj.put("identifier", s.identifier);
+            obj.put("name", s.name);
+            obj.put("publisher", s.publisher);
+            obj.put("tray_image_file", getFileName(s.trayImageFile));
+            obj.put("image_data_version", s.imageDataVersion);
+            obj.put("avoid_cache", s.avoidCache);
+            obj.put("publisher_email", s.publisherEmail);
+            obj.put("publisher_website", s.publisherWebsite);
+            obj.put("privacy_policy_website", s.privacyPolicyWebsite);
+            obj.put("license_agreement_website", s.licenseAgreementWebsite);
+
+            JSONArray stickerList = new JSONArray();
+            for (Sticker _sticker : s.getStickers()) {
+                JSONObject stickerObj = new JSONObject();
+                String stickerFileName = getFileName(_sticker.imageFileName);
+                stickerObj.put("image_file", stickerFileName);
+                JSONArray _emojies = new JSONArray();
+                for (String emoji : _sticker.emojis) {
+                    _emojies.put(emoji);
+                }
+                stickerObj.put("emojis", _emojies);
+                stickerList.put(stickerObj);
+            }
+            obj.put("stickers", stickerList);
+            _packs.put(obj);
+        }
+        mObj.put("sticker_packs", _packs);
+        writeConfigFile(context, mObj.toString());
+        return true;
+    }
+
+    static void writeConfigFile(Context context, String jsonString) {
+        String filePath = getConfigFilePath(context);
+        File f = new File(filePath);
+        try {
+            FileWriter writer = new FileWriter(f);
+            writer.write(jsonString);
+            writer.close();
+            context.getContentResolver().notifyChange(
+                    WhatsappStickersPlugin.getContentProviderAuthorityURI(context), null);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static void generateConfigFile(Context context) throws JSONException {
+        File file = new File(getConfigFilePath(context));
+        if (!file.exists()) {
+            // prepare data
+            JSONObject mObj = new JSONObject();
+            mObj.put("android_play_store_link", "");
+            mObj.put("ios_app_store_link", "");
+            JSONArray _packs = new JSONArray();
+            mObj.put("sticker_packs", _packs);
+            // write in file
+            writeConfigFile(context, mObj.toString());
+        }
+    }
+
+    public static String getConfigFilePath(Context context) {
+        return PathUtils.getDataDirectory(context) + File.separator + CONTENT_FILE_NAME;
+    }
+}

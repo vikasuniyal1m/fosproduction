@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
-import '../../controllers/auth_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/loading_widget.dart';
 import '../../routes/app_routes.dart';
 
@@ -16,7 +16,7 @@ class NewPasswordScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.find<AuthController>();
+    final controller = GetXRegistry.auth();
     
     // Set token if provided
     if (token != null && token!.isNotEmpty) {

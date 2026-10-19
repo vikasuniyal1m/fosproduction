@@ -1,5 +1,7 @@
 import Flutter
 import UIKit
+import stripe_ios
+import WatchConnectivity
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,6 +10,17 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
+    let didFinish = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
+    if let registrar = self.registrar(forPlugin: "WatchFaceInstallerPlugin") {
+      WatchFaceInstallerPlugin.register(with: registrar)
+    }
+
+    return didFinish
+  }
+
+  override func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+    return super.application(app, open: url, options: options)
   }
 }

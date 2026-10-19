@@ -4,6 +4,7 @@ import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/profile_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 
 /// Addresses Screen
 /// Manages user shipping addresses
@@ -14,6 +15,7 @@ class AddressesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     ScreenSize.init(context);
     final controller = Get.put(ProfileController());
+    WidgetsBinding.instance.addPostFrameCallback((_) => controller.loadAddresses());
     
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -35,14 +37,17 @@ class AddressesScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Obx(() => controller.isLoadingAddresses.value
+      body: Obx(() => SilentLoading.blockUi(
+            isLoading: controller.isLoadingAddresses.value,
+            hasContent: controller.addresses.isNotEmpty,
+          )
           ? const LoadingWidget()
           : controller.addresses.isEmpty
               ? _buildEmptyState(controller)
               : RefreshIndicator(
                   onRefresh: controller.loadAddresses,
                   child: ListView.builder(
-                    padding: EdgeInsets.all(ScreenSize.spacingMedium),
+                    padding: EdgeInsets.all(ScreenSize.spacingSmall),
                     itemCount: controller.addresses.length,
                     itemBuilder: (context, index) {
                       final address = controller.addresses[index];
@@ -113,7 +118,7 @@ class AddressesScreen extends StatelessWidget {
     final isDefault = address['is_default'] == true || address['is_default'] == 1;
     
     return Container(
-      margin: EdgeInsets.only(bottom: ScreenSize.spacingMedium),
+      margin: EdgeInsets.only(bottom: ScreenSize.spacingSmall),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
@@ -129,8 +134,8 @@ class AddressesScreen extends StatelessWidget {
           // Address Header
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: ScreenSize.spacingMedium,
-              vertical: ScreenSize.spacingSmall,
+              horizontal: ScreenSize.spacingSmall,
+              vertical: ScreenSize.spacingXSmall,
             ),
             decoration: BoxDecoration(
               color: isDefault ? AppColors.primaryLight.withValues(alpha: 0.1) : AppColors.backgroundGrey,
@@ -186,7 +191,7 @@ class AddressesScreen extends StatelessWidget {
           
           // Address Details
           Padding(
-            padding: EdgeInsets.all(ScreenSize.spacingSmall),
+            padding: EdgeInsets.all(ScreenSize.spacingXSmall),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

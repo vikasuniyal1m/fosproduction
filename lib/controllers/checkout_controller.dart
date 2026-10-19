@@ -4,6 +4,8 @@ import '../services/api_endpoints.dart';
 import '../routes/app_routes.dart';
 import 'coupon_controller.dart';
 import 'cart_controller.dart'; // Added import for CartController
+import 'stripe_payment_controller.dart';
+import '../watch_faces/watch_face_product_ids.dart';
 
 /// Checkout Controller
 /// Manages checkout state and order creation
@@ -39,14 +41,60 @@ class CheckoutController extends GetxController {
   /// When true, cart is digital-only (e.g. from preview "Pay & Download"); no address required.
   bool isDigitalQuickPay = false;
   bool _hasTriggeredDirectStripe = false;
+  double? _quickPayAmount;
+  String? watchFaceId;
+  String? watchFaceTitle;
 
   /// Digital quick pay: checkout screen skip karke seedha Stripe pe bhejne ke liye (sirf ek baar).
   Future<void> tryGoDirectToStripe() async {
     if (!isDigitalQuickPay || items.isEmpty || _hasTriggeredDirectStripe) return;
     _hasTriggeredDirectStripe = true;
-    final order = await placeOrder();
-    // Digital: Stripe opened with Get.offNamed, so cancel/fail par already wapas aa chuke; sirf normal checkout par back karo
-    if (order == null && !isDigitalQuickPay) Get.back();
+    try {
+      final order = await placeOrder();
+      _closeDigitalPayRedirect(order);
+    } catch (_) {
+      _closeDigitalPayRedirect(null);
+    }
+  }
+
+  int? _orderItemIdFromOrder(dynamic order) {
+    if (order is! Map) return null;
+    final direct = order['order_item_id'];
+    if (direct is int) return direct;
+    if (direct != null) return int.tryParse(direct.toString());
+    final items = order['items'];
+    if (items is List && items.isNotEmpty) {
+      final first = items.first;
+      if (first is Map) {
+        final id = first['id'] ?? first['order_item_id'];
+        if (id is int) return id;
+        return int.tryParse(id?.toString() ?? '');
+      }
+    }
+    return null;
+  }
+
+  void _closeDigitalPayRedirect(dynamic order) {
+    if (!isDigitalQuickPay) {
+      if (order == null && (Get.key.currentState?.canPop() ?? false)) Get.back();
+      return;
+    }
+    // Watch face: Stripe already popped payment stack via Get.until
+    if (watchFaceId != null) {
+      if (Get.currentRoute == AppRoutes.digitalPayRedirect) {
+        Get.back(result: <String, dynamic>{
+          'success': order != null,
+          'watch_face_id': watchFaceId,
+        });
+      }
+      return;
+    }
+    if (Get.currentRoute == AppRoutes.digitalPayRedirect) {
+      Get.back(result: <String, dynamic>{
+        'success': order != null,
+        if (order != null) 'order_item_id': _orderItemIdFromOrder(order),
+      });
+    }
   }
 
   @override
@@ -54,6 +102,11 @@ class CheckoutController extends GetxController {
     super.onInit();
     final args = Get.arguments as Map<String, dynamic>?;
     isDigitalQuickPay = args?['digital_quick_pay'] == true;
+    _quickPayAmount = (args?['quick_pay_amount'] as num?)?.toDouble();
+    watchFaceId = (args?['watch_face_id'] as String?)?.trim();
+    if (watchFaceId != null && watchFaceId!.isEmpty) watchFaceId = null;
+    watchFaceTitle = (args?['watch_face_title'] as String?)?.trim();
+    if (watchFaceTitle != null && watchFaceTitle!.isEmpty) watchFaceTitle = null;
     loadCheckoutSummary();
   }
   
@@ -68,7 +121,11 @@ class CheckoutController extends GetxController {
           if (couponCode.isNotEmpty) {
             // Apply the pre-selected coupon after a short delay to ensure subtotal is loaded
             Future.delayed(const Duration(milliseconds: 500), () {
-              applyCoupon(couponCode);
+              if (subtotal.value > 0 && items.isNotEmpty) {
+                applyCoupon(couponCode);
+              } else {
+                couponController.clearSelectedCoupon();
+              }
             });
           }
         }
@@ -118,6 +175,18 @@ class CheckoutController extends GetxController {
       tax.value = double.tryParse(summary['tax']?.toString() ?? '0') ?? 0.0;
       discount.value = double.tryParse(summary['discount']?.toString() ?? '0') ?? 0.0;
       total.value = double.tryParse(summary['total']?.toString() ?? '0') ?? 0.0;
+
+      // For direct digital payment from product details, force selected product amount
+      // so Stripe always charges exactly what user saw on product page.
+      if (isDigitalQuickPay && _quickPayAmount != null && _quickPayAmount! > 0) {
+        subtotal.value = _quickPayAmount!;
+        shippingCharges.value = 0.0;
+        tax.value = 0.0;
+        discount.value = 0.0;
+        total.value = _quickPayAmount!;
+      }
+      
+      print('Checkout loaded - Items: ${items.length}, Total: $total');
       
       // Select default address and payment method
       if (addresses.isNotEmpty) {
@@ -178,7 +247,7 @@ class CheckoutController extends GetxController {
   /// Apply coupon code
   Future<bool> applyCoupon(String code) async {
     if (code.isEmpty) {
-      Get.snackbar('Error', 'Please enter a coupon code');
+      // Get.snackbar('Error', 'Please enter a coupon code');
       return false;
     }
     
@@ -201,7 +270,7 @@ class CheckoutController extends GetxController {
       // Recalculate total
       total.value = subtotal.value + shippingCharges.value + tax.value - discount.value;
       
-      Get.snackbar('Success', 'Coupon applied successfully');
+      // Get.snackbar('Success', 'Coupon applied successfully');
       return true;
     } catch (e) {
       ApiService.showErrorSnackbar(e);
@@ -221,17 +290,17 @@ class CheckoutController extends GetxController {
   Future<Map<String, dynamic>?> placeOrder() async {
     // Validate cart is not empty
     if (items.isEmpty) {
-      Get.snackbar('Error', 'Your cart is empty. Please add items before placing an order.');
+      // Get.snackbar('Error', 'Your cart is empty. Please add items before placing an order.');
       return null;
     }
 
     if (selectedAddressId.value == 0 && !isDigitalQuickPay) {
-      Get.snackbar('Error', 'Please select a shipping address');
+      // Get.snackbar('Error', 'Please select a shipping address');
       return null;
     }
     
     if (paymentMethods.isEmpty) {
-      Get.snackbar('Error', 'Please add a payment method');
+      // Get.snackbar('Error', 'Please add a payment method');
       return null;
     }
     
@@ -260,18 +329,28 @@ class CheckoutController extends GetxController {
         'coupon_code': couponCode.value,
         'notes': notes.value,
         'is_digital_order': isDigitalQuickPay,
+        if (watchFaceId != null) 'watch_face_id': watchFaceId,
       };
+      // Fresh Stripe controller taaki watch_face_id args miss na ho (purana instance stuck karta tha)
+      if (Get.isRegistered<StripePaymentController>()) {
+        await Get.delete<StripePaymentController>(force: true);
+      }
+
       // Digital: Stripe pe toNamed use karo taaki Checkout stack me rahe – payment success par createOrderFromPayment ke liye controller mile
       final result = await Get.toNamed(AppRoutes.stripePayment, arguments: args);
 
       // Check if payment was successful and order was created
       if (result != null && result is Map<String, dynamic> && result['success'] == true) {
-        // Payment was successful, and order should have been created by StripePaymentController
-        // StripePaymentController should return the created order.
-        return result['order'];
+        final createdOrder = result['order'];
+        if (createdOrder is Map<String, dynamic> && createdOrder.isNotEmpty) {
+          return createdOrder;
+        }
+        // Watch face quick pay: order optional, success flag enough
+        if (watchFaceId != null) return result;
+        return createdOrder is Map<String, dynamic> ? createdOrder : null;
       } else {
         if (!isDigitalQuickPay) {
-          Get.snackbar('Payment Failed', 'Your payment could not be processed. Please try again.');
+          // Get.snackbar('Payment Failed', 'Your payment could not be processed. Please try again.');
         }
         return null;
       }
@@ -292,7 +371,33 @@ class CheckoutController extends GetxController {
         'payment_method': paymentType,
         if (couponCode.value.isNotEmpty) 'coupon_code': couponCode.value,
         if (notes.value.isNotEmpty) 'notes': notes.value,
+        if (watchFaceId != null) 'notes': 'watch_face_id:$watchFaceId',
       };
+
+      // Watch face: cart server pe empty ho sakta hai — catalog price + product id use karo.
+      if (watchFaceId != null && isDigitalQuickPay) {
+        final price = _quickPayAmount ?? total.value;
+        final productId = WatchFaceProductIds.resolve(watchFaceId!, null) ??
+            (items.isNotEmpty
+                ? int.tryParse(
+                    (items.first['product_id'] ?? items.first['id'])?.toString() ?? '',
+                  )
+                : null);
+        if (productId != null && productId > 0 && price > 0) {
+          final title = watchFaceTitle?.trim();
+          orderData['items'] = [
+            {
+              'product_id': productId,
+              'product_name': title != null && title.isNotEmpty
+                  ? 'Watch Face · $title'
+                  : 'FOS Watch Face',
+              'price': price,
+              'quantity': 1,
+              'is_digital': true,
+            },
+          ];
+        }
+      }
       
       // Set payment_status: 'paid' for successful online payments, 'pending' for COD
       if (isPaymentSuccess && paymentType != 'cod') {
@@ -313,7 +418,16 @@ class CheckoutController extends GetxController {
       );
       
       final data = ApiService.handleResponse(response);
-      final order = data['order'] ?? {};
+      final orderRaw = data['order'];
+      if (orderRaw is! Map) {
+        throw Exception('Order was not created. Please check My Orders.');
+      }
+      final order = Map<String, dynamic>.from(orderRaw);
+      final orderId = order['id'] ?? data['order_id'];
+      if (orderId == null || int.tryParse(orderId.toString()) == null || int.parse(orderId.toString()) <= 0) {
+        throw Exception('Order was not created. Please check My Orders.');
+      }
+      order['id'] = int.parse(orderId.toString());
       
       // Clear selected coupon from CouponController after successful order
       try {
@@ -346,12 +460,6 @@ class CheckoutController extends GetxController {
     }
   }
   
-  /// Process online payment
-  Future<Map<String, dynamic>?> _processOnlinePayment(Map<String, dynamic> paymentMethod) async {
-    // This method is no longer used as placeOrder now handles navigation to StripePaymentScreen
-    // and order creation is deferred until after successful payment.
-    return null;
-  }
 
   // The _createOrder method is now renamed to createOrderFromPayment and made public.
   // The original _createOrder method is removed.

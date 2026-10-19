@@ -1,3 +1,8 @@
-#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+#include? "Pods/Target Support Files/Pods-FOS Productions/Pods-FOS Productions.release.xcconfig"
 #include "Generated.xcconfig"
-#include? "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+// Smaller Xcode Archive / IPA
+STRIP_INSTALLED_PRODUCT = YES
+DEAD_CODE_STRIPPING = YES
+COPY_PHASE_STRIP = YES
+DEPLOYMENT_POSTPROCESSING = YES
+SWIFT_OPTIMIZATION_LEVEL = -Osize

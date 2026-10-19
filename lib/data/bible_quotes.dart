@@ -1,0 +1,23 @@
+/// Curated Bible verses for FOS Lens quote overlays.
+const List<String> kFosLensBibleQuotes = [
+  'For God so loved the world that he gave his one and only Son. — John 3:16',
+  'I can do all things through Christ who strengthens me. — Philippians 4:13',
+  'Trust in the Lord with all your heart. — Proverbs 3:5',
+  'The Lord is my shepherd; I shall not want. — Psalm 23:1',
+  'Be strong and courageous. Do not be afraid. — Joshua 1:9',
+  'And we know that in all things God works for the good of those who love him. — Romans 8:28',
+  'Peace I leave with you; my peace I give you. — John 14:27',
+  'Cast all your anxiety on him because he cares for you. — 1 Peter 5:7',
+  'The Lord bless you and keep you. — Numbers 6:24',
+  'Let all that you do be done in love. — 1 Corinthians 16:14',
+  'Rejoice always, pray continually, give thanks in all circumstances. — 1 Thessalonians 5:16–18',
+  'Your word is a lamp for my feet, a light on my path. — Psalm 119:105',
+  'Be still, and know that I am God. — Psalm 46:10',
+  'Love is patient, love is kind. — 1 Corinthians 13:4',
+  'With God all things are possible. — Matthew 19:26',
+  'The joy of the Lord is your strength. — Nehemiah 8:10',
+  'Do not fear, for I am with you. — Isaiah 41:10',
+  'Give thanks to the Lord, for he is good. — Psalm 107:1',
+  'We love because he first loved us. — 1 John 4:19',
+  'Commit to the Lord whatever you do, and he will establish your plans. — Proverbs 16:3',
+];

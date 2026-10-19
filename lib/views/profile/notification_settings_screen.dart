@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../controllers/notification_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/screen_size.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
@@ -13,7 +14,7 @@ class NotificationSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.find<NotificationController>();
+    final controller = GetXRegistry.notification();
 
     return Scaffold(
       appBar: AppBar(
@@ -26,6 +27,16 @@ class NotificationSettingsScreen extends StatelessWidget {
         elevation: 0,
         centerTitle: true,
         toolbarHeight: ScreenSize.buttonHeightLarge,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.settings, color: AppColors.textWhite),
+            onPressed: () {
+              // Open device notification settings
+              controller.openNotificationSettings();
+            },
+            tooltip: 'System Notification Settings',
+          ),
+        ],
       ),
       body: Obx(() => SingleChildScrollView(
         padding: EdgeInsets.all(ScreenSize.spacingMedium),
@@ -33,7 +44,7 @@ class NotificationSettingsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Permission Status Card
-            _buildPermissionStatusCard(controller),
+            // _buildPermissionStatusCard(controller),
             
             SizedBox(height: ScreenSize.spacingLarge),
             
@@ -87,6 +98,62 @@ class NotificationSettingsScreen extends StatelessWidget {
               value: controller.smsNotificationsEnabled.value,
               onChanged: controller.toggleSmsNotifications,
               icon: Icons.sms_outlined,
+              enabled: controller.notificationsEnabled.value,
+            ),
+            
+            SizedBox(height: ScreenSize.spacingLarge),
+            
+            // Notification Types Section
+            _buildSectionTitle('Notification Types'),
+            SizedBox(height: ScreenSize.spacingMedium),
+            
+            // Order Notifications
+            _buildNotificationSwitch(
+              controller: controller,
+              title: 'Orders',
+              subtitle: 'Order confirmations, updates, and delivery',
+              value: controller.ordersNotificationsEnabled.value,
+              onChanged: controller.toggleOrdersNotifications,
+              icon: Icons.shopping_bag_outlined,
+              enabled: controller.notificationsEnabled.value,
+            ),
+            
+            SizedBox(height: ScreenSize.spacingSmall),
+            
+            // Offer Notifications
+            _buildNotificationSwitch(
+              controller: controller,
+              title: 'Offers & Deals',
+              subtitle: 'Special discounts and promotions',
+              value: controller.offersNotificationsEnabled.value,
+              onChanged: controller.toggleOffersNotifications,
+              icon: Icons.local_offer_outlined,
+              enabled: controller.notificationsEnabled.value,
+            ),
+            
+            SizedBox(height: ScreenSize.spacingSmall),
+            
+            // Payment Notifications
+            _buildNotificationSwitch(
+              controller: controller,
+              title: 'Payments',
+              subtitle: 'Payment confirmations and refunds',
+              value: controller.paymentsNotificationsEnabled.value,
+              onChanged: controller.togglePaymentsNotifications,
+              icon: Icons.payment_outlined,
+              enabled: controller.notificationsEnabled.value,
+            ),
+            
+            SizedBox(height: ScreenSize.spacingSmall),
+            
+            // General Notifications
+            _buildNotificationSwitch(
+              controller: controller,
+              title: 'General',
+              subtitle: 'App updates, news, and announcements',
+              value: controller.generalNotificationsEnabled.value,
+              onChanged: controller.toggleGeneralNotifications,
+              icon: Icons.notifications_outlined,
               enabled: controller.notificationsEnabled.value,
             ),
             

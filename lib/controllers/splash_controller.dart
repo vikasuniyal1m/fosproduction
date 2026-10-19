@@ -13,27 +13,58 @@ class SplashController extends GetxController {
   
   /// Initialize app and navigate to appropriate screen
   Future<void> _initializeApp() async {
-    await Future.delayed(const Duration(seconds: 3));
-    
-    // Check onboarding status first
-    final isOnboardingCompleted = CacheManager.isOnboardingCompleted();
-    
-    // Debug logs
-    print('Splash: isOnboardingCompleted = $isOnboardingCompleted');
-    
-    // If onboarding not completed, show onboarding first
-    if (!isOnboardingCompleted) {
-      print('Splash: Navigating to Onboarding (first time user)');
-      AppRoutes.toOnboarding();
-      return;
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Check if widget is still mounted
+      if (!Get.isRegistered<SplashController>()) {
+        print('Splash: Controller disposed, skipping navigation');
+        return;
+      }
+      
+      // Check onboarding status first
+      final isOnboardingCompleted = CacheManager.isOnboardingCompleted();
+      print('Splash: isOnboardingCompleted = $isOnboardingCompleted');
+      
+      // If onboarding not completed, show onboarding first
+      if (!isOnboardingCompleted) {
+        print('Splash: Navigating to Onboarding');
+        AppRoutes.toOnboarding();
+        return;
+      }
+      
+      // Check authentication status
+      final isLoggedIn = CacheManager.isLoggedIn();
+      final isGuestMode = CacheManager.isGuestMode();
+      final userToken = CacheManager.getUserToken();
+      print('Splash: isLoggedIn = $isLoggedIn, isGuestMode = $isGuestMode');
+      print('Splash: userToken exists = ${userToken != null && userToken.isNotEmpty}');
+      
+      if ((isLoggedIn && userToken != null && userToken.isNotEmpty) || isGuestMode) {
+        // User is authenticated or browsing as guest, navigate to home
+        print('Splash: Navigating to Home (isLoggedIn=$isLoggedIn, isGuestMode=$isGuestMode)');
+        AppRoutes.toHome();
+      } else {
+        // User is not authenticated, navigate to login
+        print('Splash: User is not authenticated, navigating to Login');
+        AppRoutes.toLogin();
+      }
+    } catch (e, stackTrace) {
+      print('Splash: Error during initialization: $e');
+      print('Splash: StackTrace: $stackTrace');
+      // Fallback navigation - check authentication first
+      Future.delayed(const Duration(milliseconds: 500), () {
+        final isLoggedIn = CacheManager.isLoggedIn();
+        final isGuestMode = CacheManager.isGuestMode();
+        final userToken = CacheManager.getUserToken();
+        
+        if ((isLoggedIn && userToken != null && userToken.isNotEmpty) || isGuestMode) {
+          AppRoutes.toHome();
+        } else {
+          AppRoutes.toLogin();
+        }
+      });
     }
-    
-    // Navigate based on app state
-    // Allow browsing without login - always go to home
-    // Users can browse products without registration
-    // Login will only be required for account-based features (cart, checkout, etc.)
-    print('Splash: Navigating to Home (browsing allowed without login)');
-    AppRoutes.toHome();
   }
   
   /// Reset onboarding (for testing/debugging)

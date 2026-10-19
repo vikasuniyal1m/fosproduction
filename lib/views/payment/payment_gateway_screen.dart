@@ -253,7 +253,7 @@ class _PaymentGatewayScreenState extends State<PaymentGatewayScreen> {
     ScreenSize.init(context);
     
     return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Review Order'),
         backgroundColor: AppColors.primary,

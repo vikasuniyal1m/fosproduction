@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/profile_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/loading_widget.dart';
 
 /// Add/Edit Address Screen
@@ -115,7 +116,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       );
     }
 
-    final controller = Get.find<ProfileController>();
+    final controller = GetXRegistry.profile();
 
     return Scaffold(
       backgroundColor: AppColors.background,

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">FOS Productions</string>
+    <!-- Google Sign-In: Web client (must match GoogleAuthConfig.webClientId) -->
+    <string name="default_web_client_id">312606208197-k2tqmk7j9be767lk629kl25usp0noo35.apps.googleusercontent.com</string>
 </resources>

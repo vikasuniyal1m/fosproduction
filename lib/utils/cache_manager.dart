@@ -19,6 +19,7 @@ class CacheManager {
   static const String _keyUserPhone = 'user_phone';
   static const String _keyIsLoggedIn = 'is_logged_in';
   static const String _keyOnboardingCompleted = 'onboarding_completed';
+  static const String _keyIsGuestMode = 'is_guest_mode';
   
   // ========== App Settings ==========
   static const String _keyThemeMode = 'theme_mode';
@@ -28,6 +29,7 @@ class CacheManager {
   // ========== Cart & Wishlist ==========
   static const String _keyCartItems = 'cart_items';
   static const String _keyWishlistItems = 'wishlist_items';
+  static const String _keyLastLoginPromptTime = 'last_login_prompt_time';
   
   // ========== User Data Methods ==========
   static Future<void> saveUserId(String userId) => _storage.write(_keyUserId, userId);
@@ -47,6 +49,9 @@ class CacheManager {
   
   static Future<void> setLoggedIn(bool value) => _storage.write(_keyIsLoggedIn, value);
   static bool isLoggedIn() => _storage.read(_keyIsLoggedIn) ?? false;
+  
+  static Future<void> setGuestMode(bool value) => _storage.write(_keyIsGuestMode, value);
+  static bool isGuestMode() => _storage.read(_keyIsGuestMode) ?? false;
   
   static Future<void> setOnboardingCompleted(bool value) => _storage.write(_keyOnboardingCompleted, value);
   static bool isOnboardingCompleted() => _storage.read(_keyOnboardingCompleted) ?? false;
@@ -98,9 +103,35 @@ class CacheManager {
     await _storage.remove(_keyUserName);
     await _storage.remove(_keyUserPhone);
     await _storage.remove(_keyIsLoggedIn);
+    await _storage.remove(_keyIsGuestMode);
+  }
+
+  /// Logout: token + cart + wishlist + orders/profile/addresses caches.
+  static Future<void> clearUserSessionData() async {
+    await clearUserData();
+    await _storage.remove(_keyCartItems);
+    await _storage.remove(_keyWishlistItems);
+    await _storage.remove(_keyLastLoginPromptTime);
+
+    final keys = _storage.getKeys().toList();
+    for (final key in keys) {
+      final k = key.toString();
+      if (k.startsWith('cache_') ||
+          k.startsWith('order_detail_') ||
+          k.startsWith('product_detail_') ||
+          k.startsWith('category_products_') ||
+          k.startsWith('sync:') ||
+          k == 'digital_purchased_map') {
+        await _storage.remove(key);
+      }
+    }
   }
   
   // ========== Check if key exists ==========
   static bool hasData(String key) => _storage.hasData(key);
+  
+  // ========== Login Prompt Time Tracking ==========
+  static Future<void> saveLastLoginPromptTime(int timestamp) => _storage.write(_keyLastLoginPromptTime, timestamp);
+  static int getLastLoginPromptTime() => _storage.read(_keyLastLoginPromptTime) ?? 0;
 }
 
