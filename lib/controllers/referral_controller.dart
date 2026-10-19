@@ -4,6 +4,8 @@ import 'package:share_plus/share_plus.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
 import '../utils/app_colors.dart';
+import '../utils/data_cache.dart';
+import '../utils/cache_manager.dart';
 
 /// Referral Controller
 /// Handles referral program logic and API calls
@@ -25,19 +27,49 @@ class ReferralController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _loadCachedReferral();
     loadReferralCode();
     loadStats();
+  }
+
+  void _loadCachedReferral() {
+    final cached = DataCache.loadMap(DataCache.referral);
+    if (cached == null) return;
+    referralCode.value = cached['referralCode']?.toString() ?? referralCode.value;
+    referralLink.value = cached['referralLink']?.toString() ?? referralLink.value;
+    totalReferrals.value = int.tryParse(cached['totalReferrals']?.toString() ?? '0') ?? 0;
+    successfulReferrals.value = int.tryParse(cached['successfulReferrals']?.toString() ?? '0') ?? 0;
+    rewardPointsEarned.value = int.tryParse(cached['rewardPointsEarned']?.toString() ?? '0') ?? 0;
+    if (cached['referredUsers'] is List) {
+      referredUsers.value = (cached['referredUsers'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    }
+  }
+
+  Future<void> _saveReferralCache() async {
+    await DataCache.saveMap(DataCache.referral, {
+      'referralCode': referralCode.value,
+      'referralLink': referralLink.value,
+      'totalReferrals': totalReferrals.value,
+      'successfulReferrals': successfulReferrals.value,
+      'rewardPointsEarned': rewardPointsEarned.value,
+      'referredUsers': referredUsers.toList(),
+    });
   }
   
   /// Load user's referral code
   Future<void> loadReferralCode() async {
-    isLoading.value = true;
+    if (referralCode.value.isEmpty) {
+      isLoading.value = true;
+    }
     try {
       final response = await _apiService.get(ApiEndpoints.referralCode);
       final data = ApiService.handleResponse(response);
       
       referralCode.value = data['referral_code'] ?? '';
       referralLink.value = data['referral_link'] ?? 'Use code: ${referralCode.value} during signup';
+      await _saveReferralCache();
     } catch (e) {
       print('[Referral] Error loading code: $e');
       Get.snackbar('Error', 'Failed to load referral code', 
@@ -49,7 +81,9 @@ class ReferralController extends GetxController {
   
   /// Load referral statistics
   Future<void> loadStats() async {
-    isLoadingStats.value = true;
+    if (!CacheManager.hasData(DataCache.referral)) {
+      isLoadingStats.value = true;
+    }
     try {
       final response = await _apiService.get(ApiEndpoints.referralStats);
       final data = ApiService.handleResponse(response);
@@ -58,6 +92,7 @@ class ReferralController extends GetxController {
       successfulReferrals.value = data['successful_referrals'] ?? 0;
       rewardPointsEarned.value = data['reward_points_earned'] ?? 0;
       referredUsers.value = List<Map<String, dynamic>>.from(data['referred_users'] ?? []);
+      await _saveReferralCache();
     } catch (e) {
       print('[Referral] Error loading stats: $e');
       Get.snackbar('Error', 'Failed to load referral statistics', 
@@ -73,7 +108,7 @@ class ReferralController extends GetxController {
       await loadReferralCode();
     }
     
-    final shareText = 'Join me on this amazing shopping app! Use my referral code: ${referralCode.value} and get amazing rewards!';
+    final shareText = 'Join me on this amazing shopping app! Use my referral code: ${referralCode.value} and get amazing rewards!\n\nDownload the app: https://play.google.com/store/apps/details?id=com.yourapp.package';
     
     try {
       await Share.share(shareText, subject: 'Referral Code');

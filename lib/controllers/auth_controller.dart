@@ -1,11 +1,23 @@
+import 'package:ecommerceapp/controllers/profile_controller.dart';
+import 'package:ecommerceapp/controllers/wishlist_controller.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'dart:io' show Platform;
+import 'package:hive_flutter/hive_flutter.dart';
+import '../config/google_auth_config.dart';
 import '../routes/app_routes.dart';
 import '../utils/cache_manager.dart';
 import '../utils/app_colors.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
+import '../services/notification_service.dart';
+import 'cart_controller.dart';
+import 'home_controller.dart';
 
 /// Auth Controller
 /// Handles authentication logic (Login, Signup, etc.)
@@ -37,6 +49,14 @@ class AuthController extends GetxController {
   final RxString signupPasswordError = ''.obs;
   final RxString signupConfirmPasswordError = ''.obs;
   final RxString signupGeneralError = ''.obs;
+  
+  /// Continue as Guest Mode
+  void continueAsGuest() {
+    print('[Auth] Continuing as Guest');
+    CacheManager.setGuestMode(true);
+    CacheManager.setLoggedIn(false);
+    AppRoutes.toHome();
+  }
   
   /// Clear all login errors
   void _clearLoginErrors() {
@@ -177,7 +197,41 @@ class AuthController extends GetxController {
     final data = ApiService.handleResponse(response);
       final user = data['user'] ?? {};
       final token = data['token'] ?? '';
-
+      
+      // Debug token details
+      print('[Auth] Login API Response - User: ${user['email']}, Token: $token');
+      print('[Auth] Token length: ${token.length}');
+      print('[Auth] Token format check: ${token.contains(':')}');
+      print('[Auth] Token is hex only: ${RegExp(r'^[a-fA-F0-9]+$').hasMatch(token)}');
+      
+      // Test token immediately with profile API to verify server is working
+      print('[Auth] Testing token with profile API...');
+      try {
+        final testResponse = await _apiService.get('/user/profile.php');
+        final testData = ApiService.handleResponse(testResponse);
+        print('[Auth] Profile API test response: ${testData['success'] ? 'SUCCESS' : 'FAILED'}');
+        if (!testData['success']) {
+          print('[Auth] Profile API error: ${testData['message']}');
+        }
+      } catch (e) {
+        print('[Auth] Profile API test exception: $e');
+      }
+      
+      // Decode token to see actual content
+      try {
+        final decodedBytes = base64.decode(token);
+        final decodedString = utf8.decode(decodedBytes);
+        print('[Auth] Decoded token: "$decodedString"');
+        print('[Auth] Decoded token contains ":": ${decodedString.contains(':')}');
+        if (decodedString.contains(':')) {
+          final parts = decodedString.split(':');
+          print('[Auth] User ID: ${parts[0]}, Hash: ${parts[1]}');
+        }
+      } catch (e) {
+        print('[Auth] Token decode error: $e');
+        print('[Auth] This appears to be a hex token, not Base64');
+      }
+      
       if (token.isEmpty) {
         generalError.value = 'Login failed. Please try again.';
         return;
@@ -185,11 +239,17 @@ class AuthController extends GetxController {
       
       // Save user data
       await CacheManager.setLoggedIn(true);
+      await CacheManager.setGuestMode(false);
       await CacheManager.saveUserId(user['id']?.toString() ?? '');
       await CacheManager.saveUserEmail(user['email'] ?? email.value.trim());
       await CacheManager.saveUserName(user['name'] ?? '');
       await CacheManager.saveUserPhone(user['phone'] ?? '');
       await CacheManager.saveUserToken(token);
+      
+      print('[Auth] Login successful - Refreshing all controllers');
+      
+      // Refresh all controllers to detect login state
+      _refreshAllControllers();
       
       // Clear form
       email.value = '';
@@ -377,11 +437,17 @@ class AuthController extends GetxController {
       
       // Save user data
       await CacheManager.setLoggedIn(true);
+      await CacheManager.setGuestMode(false);
       await CacheManager.saveUserId(user['id']?.toString() ?? '');
       await CacheManager.saveUserEmail(user['email'] ?? signupEmail.value.trim());
       await CacheManager.saveUserName(user['name'] ?? signupName.value.trim());
       await CacheManager.saveUserPhone(user['phone'] ?? signupPhone.value.trim());
       await CacheManager.saveUserToken(token);
+      
+      print('[Auth] Signup successful - Refreshing all controllers');
+      
+      // Refresh all controllers to detect login state
+      _refreshAllControllers();
       
       // Clear form
       signupName.value = '';
@@ -591,34 +657,32 @@ class AuthController extends GetxController {
         },
       );
       
-      final data = ApiService.handleResponse(response);
+      final responseData = ApiService.handleResponse(response);
       
-      if (data['success'] == true) {
-        final responseData = data['data'] ?? {};
-        final resetTokenValue = responseData['reset_token'];
-        
-        // Show success message
-        Get.snackbar(
-          'Success',
-          data['message'] ?? 'Password reset link sent to your email',
-          backgroundColor: AppColors.successLight,
-          colorText: AppColors.success,
-          duration: const Duration(seconds: 3),
-        );
-        
-        // If token is returned (for testing), navigate to reset password screen
-        if (resetTokenValue != null && resetTokenValue.toString().isNotEmpty) {
-          // Store token temporarily
-          resetToken.value = resetTokenValue.toString();
-          // Navigate to new password screen
-          await Future.delayed(const Duration(seconds: 1));
-          AppRoutes.toNewPassword(resetTokenValue.toString());
-        } else {
-          // In production, user should check email
-          // For now, go back to login
-          await Future.delayed(const Duration(seconds: 2));
-          AppRoutes.toLogin();
-        }
+      // Show success message
+      // Get.snackbar(
+      //   'Success',
+      //   responseData['message'] ?? 'Password reset link sent to your email',
+      //   backgroundColor: AppColors.successLight,
+      //   colorText: AppColors.success,
+      //   duration: const Duration(seconds: 3),
+      // );
+
+      // Get reset token from response
+      final resetTokenValue = responseData['reset_token'];
+
+      // If token is returned (for testing), navigate to reset password screen
+      if (resetTokenValue != null && resetTokenValue.toString().isNotEmpty) {
+        // Store token temporarily
+        resetToken.value = resetTokenValue.toString();
+        // Navigate to new password screen
+        await Future.delayed(const Duration(seconds: 1));
+        AppRoutes.toNewPassword(resetTokenValue.toString());
+      } else {
+        // In production, user should check email
+        // For now, go back to login
+        await Future.delayed(const Duration(seconds: 2));
+        AppRoutes.toLogin();
       }
     } on DioException catch (e) {
       _handleForgotPasswordError(e);
@@ -708,59 +772,24 @@ class AuthController extends GetxController {
       
       final data = ApiService.handleResponse(response);
       
-      if (data['success'] == true) {
-        // Show success message
-        Get.snackbar(
-          'Success',
-          data['message'] ?? 'Password reset successful',
-          backgroundColor: AppColors.successLight,
-          colorText: AppColors.success,
-          duration: const Duration(seconds: 2),
-        );
-        
-        // Clear form
-        resetToken.value = '';
-        newPassword.value = '';
-        resetConfirmPassword.value = '';
-        
-        // Navigate to login
-        await Future.delayed(const Duration(seconds: 1));
-        AppRoutes.toLogin();
+      // Show success message
+      // Get.snackbar(
+      //   'Success',
+      //   responseData['message'] ?? 'Password reset successful',
+      //   backgroundColor: AppColors.successLight,
+      //   colorText: AppColors.success,
+      //   duration: const Duration(seconds: 2),
+      // );
 
-  }
+      // Clear form
+      resetToken.value = '';
+      newPassword.value = '';
+      resetConfirmPassword.value = '';
 
-  /// Logout user
-  Future<void> logout() async {
-    isLoading.value = true;
-    try {
-      // Clear all user data from local storage
-      await CacheManager.clearUserData();
-
-      // Navigate to the login screen and remove all previous routes
+      // Navigate to login
+      await Future.delayed(const Duration(seconds: 1));
       AppRoutes.toLogin();
-
-      // Optionally, dispose of controllers if they are not needed after logout
-      // Get.delete<AuthController>(); // Only if you want to re-initialize AuthController on next login
-
-      Get.snackbar(
-        'Success',
-        'You have been logged out successfully.',
-        backgroundColor: AppColors.primary,
-        colorText: AppColors.textWhite,
-      );
-    } catch (e) {
-     print('Logout error: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to logout. Please try again.',
-        backgroundColor: AppColors.accent,
-        colorText: AppColors.textWhite,
-      );
-    } finally {
-      isLoading.value = false;
-    }
-  }
-} on DioException catch (e) {
+    } on DioException catch (e) {
       _handleResetPasswordError(e);
     } catch (e) {
       resetGeneralError.value = 'An unexpected error occurred. Please try again.';
@@ -842,7 +871,480 @@ class AuthController extends GetxController {
   
   /// Logout user
   Future<void> logout() async {
-    await CacheManager.clearUserData();
-    AppRoutes.toLogin();
+    isLoading.value = true;
+    try {
+      // Stop notification service first
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.stopRealTimeUpdates();
+      }
+      
+      await CacheManager.clearUserSessionData();
+      await _resetUserControllers();
+      await _clearAppState();
+
+      // Navigate to the login screen and remove all previous routes
+      AppRoutes.toLogin();
+
+      // Get.snackbar(
+      //   'Success',
+      //   'You have been logged out successfully.',
+      //   backgroundColor: AppColors.primary,
+      //   colorText: AppColors.textWhite,
+      // );
+    } catch (e) {
+      print('Logout error: $e');
+      // Get.snackbar(
+      //   'Error',
+      //   'Failed to logout. Please try again.',
+      //   backgroundColor: AppColors.accent,
+      //   colorText: AppColors.textWhite,
+      // );
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> _resetUserControllers() async {
+    try {
+      if (Get.isRegistered<CartController>()) {
+        final cart = Get.find<CartController>();
+        cart.cartItems.clear();
+        cart.totalItems.value = 0;
+        cart.subtotal.value = 0.0;
+      }
+      if (Get.isRegistered<WishlistController>()) {
+        Get.find<WishlistController>().wishlistItems.clear();
+      }
+      if (Get.isRegistered<ProfileController>()) {
+        Get.find<ProfileController>().clearOnLogout();
+      }
+      if (Get.isRegistered<HomeController>()) {
+        final home = Get.find<HomeController>();
+        home.activeOrdersCount.value = 0;
+      }
+    } catch (e) {
+      print('[AuthController] reset controllers on logout: $e');
+    }
+  }
+
+  /// Clear app state on logout
+  Future<void> _clearAppState() async {
+    try {
+      // Clear Hive app state box
+      if (Hive.isBoxOpen('appState')) {
+        final box = Hive.box('appState');
+        await box.clear();
+        print('[AuthController] Cleared app state on logout');
+      }
+    } catch (e) {
+      print('[AuthController] Error clearing app state: $e');
+    }
+  }
+
+  // ================== SOCIAL LOGIN ==================
+
+  /// Google Sign-In
+  Future<void> signInWithGoogle() async {
+    isLoading.value = true;
+    generalError.value = '';
+    
+    try {
+      print('[GMAIL DEBUG] ========== STARTING GOOGLE SIGN-IN ==========');
+      print('[GMAIL DEBUG] Current timestamp: ${DateTime.now()}');
+      
+      // Check Google Play Services availability
+      print('[GMAIL DEBUG] Checking Google Play Services...');
+      try {
+        final GoogleSignIn googleSignInTest = GoogleSignIn();
+        print('[GMAIL DEBUG] GoogleSignIn instance created successfully');
+      } catch (e) {
+        print('[GMAIL DEBUG] ERROR creating GoogleSignIn: $e');
+        print('[GMAIL DEBUG] This indicates Google Play Services issue');
+      }
+      
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        clientId: Platform.isIOS ? GoogleAuthConfig.iosClientId : null,
+        serverClientId: GoogleAuthConfig.webClientId,
+      );
+      print('[GMAIL DEBUG] GCP project 312606208197');
+      print('[GMAIL DEBUG] Android release client: ${GoogleAuthConfig.androidReleaseClientId}');
+      print('[GMAIL DEBUG] Android debug client: ${GoogleAuthConfig.androidDebugClientId}');
+      print('[GMAIL DEBUG] serverClientId (web): ${GoogleAuthConfig.webClientId}');
+      print('[GMAIL DEBUG] iOS clientId: ${GoogleAuthConfig.iosClientId}');
+      print('[GMAIL DEBUG] Android SHA-1 (release): ${GoogleAuthConfig.androidReleaseSha1}');
+      print('[GMAIL DEBUG] GoogleSignIn initialized with scopes: email, profile');
+      
+      // Check current user
+      final GoogleSignInAccount? currentUser = googleSignIn.currentUser;
+      print('[GMAIL DEBUG] Current user: ${currentUser?.email ?? "None"}');
+      print('[GMAIL DEBUG] Current user ID: ${currentUser?.id ?? "None"}');
+      
+      // Sign out first to ensure clean state
+      print('[GMAIL DEBUG] Signing out to ensure clean state...');
+      await googleSignIn.signOut();
+      print('[GMAIL DEBUG] Signed out successfully');
+       
+      // Trigger Google Sign-In
+      print('[GMAIL DEBUG] Triggering sign-in flow...');
+      print('[GMAIL DEBUG] This will open Google account picker dialog');
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        print('[GMAIL DEBUG] USER CANCELLED - No account selected');
+        print('[GMAIL DEBUG] This is normal user behavior, not an error');
+        isLoading.value = false;
+        return;
+      }
+
+      print('[GMAIL DEBUG] ========== SIGN-IN SUCCESSFUL ==========');
+      print('[GMAIL DEBUG] Email: ${googleUser.email}');
+      print('[GMAIL DEBUG] User ID: ${googleUser.id}');
+      print('[GMAIL DEBUG] Display Name: ${googleUser.displayName}');
+      print('[GMAIL DEBUG] Photo URL: ${googleUser.photoUrl}');
+      print('[GMAIL DEBUG] Server Auth Code: ${googleUser.serverAuthCode ?? "None"}');
+
+      // Get authentication details
+      print('[GMAIL DEBUG] Getting authentication details...');
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      
+      print('[GMAIL DEBUG] ========== AUTHENTICATION DETAILS ==========');
+      print('[GMAIL DEBUG] ID Token Present: ${googleAuth.idToken != null}');
+      print('[GMAIL DEBUG] ID Token Length: ${googleAuth.idToken?.length ?? 0}');
+      print('[GMAIL DEBUG] ID Token (first 50 chars): ${googleAuth.idToken?.substring(0, 50) ?? "Null"}...');
+      print('[GMAIL DEBUG] Access Token Present: ${googleAuth.accessToken != null}');
+      print('[GMAIL DEBUG] Access Token Length: ${googleAuth.accessToken?.length ?? 0}');
+      print('[GMAIL DEBUG] Access Token (first 50 chars): ${googleAuth.accessToken?.substring(0, 50) ?? "Null"}...');
+      
+      // Validate critical data
+      if (googleAuth.idToken == null || googleAuth.idToken!.isEmpty) {
+        print('[GMAIL DEBUG] ERROR: ID Token is null or empty');
+        throw Exception('Google ID Token is missing. Please try again.');
+      }
+      
+      if (googleUser.email == null || googleUser.email!.isEmpty) {
+        print('[GMAIL DEBUG] ERROR: User email is null or empty');
+        throw Exception('Google email is missing. Please try again.');
+      }
+      
+      // Prepare data for backend
+      final data = {
+        'provider_id': googleUser.id,
+        'email': googleUser.email,
+        'name': googleUser.displayName ?? 'Google User',
+        'photo_url': googleUser.photoUrl,
+        'id_token': googleAuth.idToken,
+        'access_token': googleAuth.accessToken,
+      };
+      
+      print('[GMAIL DEBUG] ========== BACKEND DATA PREPARED ==========');
+      print('[GMAIL DEBUG] Data keys: ${data.keys.toList()}');
+      print('[GMAIL DEBUG] Provider ID: ${data['provider_id']}');
+      print('[GMAIL DEBUG] Email: ${data['email']}');
+      print('[GMAIL DEBUG] Name: ${data['name']}');
+      print('[GMAIL DEBUG] Photo URL: ${data['photo_url']}');
+      print('[GMAIL DEBUG] ID Token Length: ${(data['id_token'] as String?)?.length ?? 0}');
+      print('[GMAIL DEBUG] Access Token Length: ${(data['access_token'] as String?)?.length ?? 0}');
+      
+      // Send to backend
+      print('[GMAIL DEBUG] ========== SENDING TO BACKEND ==========');
+      print('[GMAIL DEBUG] Endpoint: ${ApiEndpoints.googleLogin}');
+      print('[GMAIL DEBUG] This will validate the Google token on server');
+      await _handleSocialLogin(ApiEndpoints.googleLogin, data, 'google');
+      
+    } catch (e, stackTrace) {
+      print('[ERROR] Google Sign-In Error: $e');
+      print('[ERROR] Stack trace: $stackTrace');
+      
+      // Detailed error analysis
+      if (e.toString().contains('ApiException: 10')) {
+        print('[ERROR] DEVELOPER_ERROR (10) — register SHA-1 in GCP project 312606208197');
+        print('[ERROR] Package: ${GoogleAuthConfig.androidPackageName}');
+        print('[ERROR] Release SHA-1 / client: ${GoogleAuthConfig.androidReleaseSha1}');
+        print('[ERROR] Debug SHA-1 / client: ${GoogleAuthConfig.androidDebugSha1}');
+        generalError.value = 'Google Sign-In config error. Check SHA-1 in Google Cloud Console.';
+      } else if (e.toString().contains('ApiException: 12501')) {
+        print('[ERROR] User cancelled or account selection failed');
+      } else if (e.toString().contains('ApiException: 12500')) {
+        print('[ERROR] Google Play Services not available or outdated');
+        print('[ERROR] Possible fixes:');
+        print('[ERROR] 1. Update Google Play Services');
+        print('[ERROR] 2. Check device Google account settings');
+      } else if (e.toString().contains('network')) {
+        print('[ERROR] Network connectivity issue');
+      } else {
+        print('[ERROR] Unknown Google Sign-In error: $e');
+        print('[ERROR] Full error details: ${e.runtimeType}');
+      }
+      
+      generalError.value = 'Google Sign-In failed. Please try again.';
+      // Get.snackbar(
+      //   'Error',
+      //   'Google Sign-In failed. Please try again.',
+      //   backgroundColor: AppColors.error,
+      //   colorText: AppColors.textWhite,
+      // );
+    } finally {
+      isLoading.value = false;
+      print('[DEBUG] Google Sign-In process completed');
+    }
+  }
+  
+  /// Apple Sign-In
+  Future<void> signInWithApple() async {
+    // Only available on iOS
+    if (!Platform.isIOS) {
+      // Get.snackbar(
+      //   'Not Available',
+      //   'Apple Sign-In is only available on iOS devices.',
+      //   backgroundColor: AppColors.error,
+      //   colorText: AppColors.textWhite,
+      // );
+      return;
+    }
+    
+    isLoading.value = true;
+    generalError.value = '';
+    
+    try {
+      // Request credentials from Apple
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      
+      // Prepare data for backend
+      final data = {
+        'provider_id': credential.userIdentifier ?? '',
+        'email': credential.email,
+        'name': credential.givenName != null || credential.familyName != null
+            ? '${credential.givenName ?? ''} ${credential.familyName ?? ''}'.trim()
+            : null,
+        'authorization_code': credential.authorizationCode,
+        'identity_token': credential.identityToken,
+      };
+      
+      // Validate we have the required provider_id
+      if (data['provider_id'] == null || (data['provider_id'] as String).isEmpty) {
+        generalError.value = 'Unable to get Apple ID. Please try again.';
+        isLoading.value = false;
+        return;
+      }
+      
+      // Send to backend
+      await _handleSocialLogin(ApiEndpoints.appleLogin, data, 'apple');
+      
+    } on SignInWithAppleAuthorizationException catch (e) {
+      print('Apple Sign-In Authorization Error: ${e.code} - ${e.message}');
+      if (e.code != AuthorizationErrorCode.canceled) {
+        generalError.value = 'Apple Sign-In was cancelled or failed.';
+        Get.snackbar(
+          'Error',
+          'Apple Sign-In failed. Please try again.',
+          backgroundColor: AppColors.error,
+          colorText: AppColors.textWhite,
+        );
+      }
+    } catch (e) {
+      print('Apple Sign-In Error: $e');
+      generalError.value = 'Apple Sign-In failed. Please try again.';
+      Get.snackbar(
+        'Error',
+        'Apple Sign-In failed. Please try again.',
+        backgroundColor: AppColors.error,
+        colorText: AppColors.textWhite,
+      );
+    } finally {
+      isLoading.value = false;
+    }
+  }
+  
+  /// Handle social login response and save user data
+  Future<void> _handleSocialLogin(String endpoint, Map<String, dynamic> data, String provider) async {
+    try {
+      print('[GMAIL DEBUG] ========== BACKEND REQUEST STARTED ==========');
+      print('[GMAIL DEBUG] Provider: $provider');
+      print('[GMAIL DEBUG] Endpoint: $endpoint');
+      print('[GMAIL DEBUG] Request data keys: ${data.keys.toList()}');
+      
+      // Make API request
+      print('[GMAIL DEBUG] Making POST request to backend...');
+      final response = await _apiService.post(
+        endpoint,
+        data: data,
+      );
+      
+      print('[GMAIL DEBUG] ========== BACKEND RESPONSE RECEIVED ==========');
+      print('[GMAIL DEBUG] Response status code: ${response.statusCode}');
+      print('[GMAIL DEBUG] Response data type: ${response.data.runtimeType}');
+      print('[GMAIL DEBUG] Response data: ${response.data}');
+      
+      final responseData = ApiService.handleResponse(response);
+      print('[GMAIL DEBUG] Processed response data: $responseData');
+      
+      final user = responseData['user'] ?? {};
+      final token = responseData['token'] ?? '';
+      
+      print('[GMAIL DEBUG] ========== RESPONSE DATA VALIDATION ==========');
+      print('[GMAIL DEBUG] User data: $user');
+      print('[GMAIL DEBUG] Token present: ${token.isNotEmpty}');
+      print('[GMAIL DEBUG] Token length: ${token.length}');
+      print('[GMAIL DEBUG] User ID: ${user['id']}');
+      print('[GMAIL DEBUG] User email: ${user['email']}');
+      print('[GMAIL DEBUG] User name: ${user['name']}');
+      
+      if (token.isEmpty) {
+        print('[GMAIL DEBUG] ERROR: Token is empty from backend');
+        generalError.value = 'Login failed. Please try again.';
+        signupGeneralError.value = 'Login failed. Please try again.';
+        return;
+      }
+      
+      // Save user data
+      print('[GMAIL DEBUG] ========== SAVING USER DATA ==========');
+      await CacheManager.setLoggedIn(true);
+      await CacheManager.setGuestMode(false);
+      await CacheManager.saveUserId(user['id']?.toString() ?? '');
+      await CacheManager.saveUserEmail(user['email'] ?? '');
+      await CacheManager.saveUserName(user['name'] ?? '');
+      await CacheManager.saveUserPhone(user['phone'] ?? '');
+      await CacheManager.saveUserToken(token);
+      
+      print('[GMAIL DEBUG] User data saved successfully');
+      print('[GMAIL DEBUG] Social login successful - Refreshing all controllers');
+      
+      // Refresh all controllers to detect login state
+      _refreshAllControllers();
+      
+      // Clear form
+      email.value = '';
+      password.value = '';
+      
+      print('[GMAIL DEBUG] ========== LOGIN SUCCESSFUL ==========');
+      // Show success message
+      Get.snackbar(
+        'Success',
+        'Login successful with ${provider == 'google' ? 'Google' : 'Apple'}!',
+        backgroundColor: AppColors.success,
+        colorText: AppColors.textWhite,
+        duration: const Duration(seconds: 2),
+      );
+      
+      // Navigate to home
+      print('[GMAIL DEBUG] Navigating to home screen...');
+      AppRoutes.toHome();
+      
+    } on DioException catch (e) {
+      print('[GMAIL DEBUG] ========== DIO EXCEPTION ==========');
+      print('[GMAIL DEBUG] Exception type: ${e.type}');
+      print('[GMAIL DEBUG] Exception message: ${e.message}');
+      print('[GMAIL DEBUG] Response status: ${e.response?.statusCode}');
+      print('[GMAIL DEBUG] Response data: ${e.response?.data}');
+      print('[GMAIL DEBUG] Request options: ${e.requestOptions}');
+      _handleSocialLoginError(e, provider);
+    } catch (e, stackTrace) {
+      print('[GMAIL DEBUG] ========== UNEXPECTED ERROR ==========');
+      print('[GMAIL DEBUG] Error: $e');
+      print('[GMAIL DEBUG] Error type: ${e.runtimeType}');
+      print('[GMAIL DEBUG] Stack trace: $stackTrace');
+      generalError.value = 'An unexpected error occurred. Please try again.';
+      signupGeneralError.value = 'An unexpected error occurred. Please try again.';
+    }
+  }
+  
+  /// Handle social login errors
+  void _handleSocialLoginError(DioException error, String provider) {
+    generalError.value = '';
+    signupGeneralError.value = '';
+    
+    if (error.response != null) {
+      final statusCode = error.response?.statusCode;
+      final responseData = error.response?.data;
+      
+      debugPrint('[$provider] Login error status: $statusCode');
+      
+      String errorMessage = 'An error occurred';
+      
+      if (responseData is Map<String, dynamic>) {
+        errorMessage = responseData['message'] ?? errorMessage;
+      }
+      
+      final lowerMessage = errorMessage.toLowerCase();
+      
+      if (lowerMessage.contains('inactive') ||
+          lowerMessage.contains('suspended') ||
+          lowerMessage.contains('disabled')) {
+        generalError.value = 'Your account is inactive. Please contact support.';
+        signupGeneralError.value = 'Your account is inactive. Please contact support.';
+      } else {
+        generalError.value = errorMessage;
+        signupGeneralError.value = errorMessage;
+      }
+    } else {
+      // Network errors
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout) {
+        generalError.value = 'Connection timeout. Please check your internet connection.';
+        signupGeneralError.value = 'Connection timeout. Please check your internet connection.';
+      } else if (error.type == DioExceptionType.connectionError) {
+        generalError.value = 'No internet connection. Please check your network.';
+        signupGeneralError.value = 'No internet connection. Please check your network.';
+      } else {
+        generalError.value = 'Unable to connect to server. Please try again.';
+        signupGeneralError.value = 'Unable to connect to server. Please try again.';
+      }
+    }
+    
+    Get.snackbar(
+      'Error',
+      generalError.value.isNotEmpty ? generalError.value : 'Login failed. Please try again.',
+      backgroundColor: AppColors.error,
+      colorText: AppColors.textWhite,
+    );
+  }
+  
+  /// Refresh all controllers after login/signup to detect new auth state
+  void _refreshAllControllers() {
+    print('[Auth] Refreshing all controllers for new auth state');
+    
+    try {
+      // Refresh Cart Controller if exists
+      if (Get.isRegistered<CartController>()) {
+        Get.find<CartController>().loadCart();
+        print('[Auth] Cart Controller refreshed');
+      }
+      
+      // Refresh Wishlist Controller if exists
+      if (Get.isRegistered<WishlistController>()) {
+        Get.find<WishlistController>().loadWishlist();
+        print('[Auth] Wishlist Controller refreshed');
+      }
+      
+      // Refresh Profile Controller if exists
+      if (Get.isRegistered<ProfileController>()) {
+        Get.find<ProfileController>().loadUserProfile();
+        print('[Auth] Profile Controller refreshed');
+      }
+      
+      // Refresh Home Controller if exists
+      if (Get.isRegistered<HomeController>()) {
+        Get.find<HomeController>().loadHomeData();
+        print('[Auth] Home Controller refreshed');
+      }
+
+      if (Get.isRegistered<NotificationService>()) {
+        Get.find<NotificationService>()
+          ..startRealTimeUpdates()
+          ..pollNow();
+        print('[Auth] Notification polling started');
+      }
+      
+      print('[Auth] All controllers refreshed successfully');
+    } catch (e) {
+      print('[Auth] Error refreshing controllers: $e');
+    }
   }
 }

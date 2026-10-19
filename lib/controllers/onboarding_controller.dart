@@ -11,18 +11,19 @@ class OnboardingController extends GetxController {
   late PageController pageController;
   Timer? _autoTimer;
   static const Duration pageAutoAdvanceDuration = Duration(seconds: 10);
+  bool _isDisposed = false;
   
   // Onboarding pages data - Matching Figma Design
   final List<OnboardingPage> pages = [
     OnboardingPage(
       title: 'Choose Products',
       description: 'Amet minim mollit non deserunt ullamco est sit aliqua dolor do amet sint. Velit officia consequat duis enim velit mollit.',
-      imagePath: 'assets/images/onboarding1.png',
+      imagePath: 'assets/images/onboarding1_small.png',
     ),
     OnboardingPage(
       title: 'Make Payment',
       description: 'Amet minim mollit non deserunt ullamco est sit aliqua dolor do amet sint. Velit officia consequat duis enim velit mollit.',
-      imagePath: 'assets/images/onboarding2.png',
+      imagePath: 'assets/images/onboarding2_small.png',
     ),
     OnboardingPage(
       title: 'Get Your Order',
@@ -40,6 +41,7 @@ class OnboardingController extends GetxController {
   
   @override
   void onClose() {
+    _isDisposed = true;
     _autoTimer?.cancel();
     pageController.dispose();
     super.onClose();
@@ -47,13 +49,16 @@ class OnboardingController extends GetxController {
   
   /// Handle page change from UI
   void setPage(int index) {
+    if (_isDisposed) return;
     currentPage.value = index;
     _startAutoAdvance();
   }
   
   void _startAutoAdvance() {
+    if (_isDisposed) return;
     _autoTimer?.cancel();
     _autoTimer = Timer(pageAutoAdvanceDuration, () {
+      if (_isDisposed) return;
       if (isLastPage) {
         completeOnboarding();
       } else {
@@ -65,6 +70,7 @@ class OnboardingController extends GetxController {
   
   /// Go to next page
   void nextPage() {
+    if (_isDisposed) return;
     if (currentPage.value < pages.length - 1) {
       pageController.nextPage(
         duration: const Duration(milliseconds: 300),
@@ -79,6 +85,7 @@ class OnboardingController extends GetxController {
   
   /// Go to previous page
   void previousPage() {
+    if (_isDisposed) return;
     if (currentPage.value > 0) {
       pageController.previousPage(
         duration: const Duration(milliseconds: 300),
@@ -90,12 +97,14 @@ class OnboardingController extends GetxController {
   
   /// Skip onboarding
   void skipOnboarding() {
+    if (_isDisposed) return;
     _autoTimer?.cancel();
     completeOnboarding();
   }
   
   /// Complete onboarding and navigate to home (allow browsing without login)
   Future<void> completeOnboarding() async {
+    if (_isDisposed) return;
     _autoTimer?.cancel();
     await CacheManager.setOnboardingCompleted(true);
     AppRoutes.toHome();

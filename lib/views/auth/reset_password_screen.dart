@@ -1,233 +1,265 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
-import '../../controllers/auth_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/loading_widget.dart';
 import '../../routes/app_routes.dart';
 
 /// Reset Password Screen
-/// Password reset screen
+/// Password reset screen with email input and professional error handling
 class ResetPasswordScreen extends StatelessWidget {
   const ResetPasswordScreen({super.key});
   
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.find<AuthController>();
+    final controller = GetXRegistry.auth();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+    final isTablet = screenWidth >= 768 && screenWidth < 1024;
+    final isDesktop = screenWidth >= 1024;
     
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back, 
-            color: AppColors.textBlack,
-            size: ScreenSize.iconMedium, // Consistent responsive icon size
+            color: AppColors.textPrimary,
+            size: 20,
           ),
           onPressed: () => Get.back(),
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(ScreenSize.isLargeTablet ? ScreenSize.paddingMedium : (ScreenSize.isSmallTablet ? ScreenSize.paddingExtraLarge : ScreenSize.spacingSmall)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Logo/App Name - Optimized size for mobile
-              Center(
-                child: Image.asset(
-                  'assets/images/fos_logo.jpg',
-                  width: ScreenSize.isLargeTablet ? ScreenSize.widthPercent(40) : (ScreenSize.isSmallTablet ? ScreenSize.widthPercent(50) : ScreenSize.widthPercent(50)),
-                  height: ScreenSize.isLargeTablet ? ScreenSize.widthPercent(40) : (ScreenSize.isSmallTablet ? ScreenSize.widthPercent(50) : ScreenSize.widthPercent(50)),
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Icon(
-                      Icons.lock_reset,
-                      size: ScreenSize.isLargeTablet ? ScreenSize.iconExtraLarge * 4 : (ScreenSize.isSmallTablet ? ScreenSize.iconExtraLarge * 3.5 : ScreenSize.iconExtraLarge * 2.5),
-                      color: AppColors.primary, // Green color
-                    );
-                  },
-                ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isDesktop ? 480 : (isTablet ? 420 : double.infinity),
+            ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: isDesktop ? 32 : (isTablet ? 24 : 16),
+                vertical: isDesktop ? 24 : 16,
               ),
-              SizedBox(height: ScreenSize.isTablet ? ScreenSize.sectionSpacing : ScreenSize.spacingMedium),
-              
-              Text(
-                'Reset Password',
-                style: TextStyle(
-                  fontSize: ScreenSize.isTablet ? ScreenSize.headingHuge : ScreenSize.headingLarge,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textBlack, // Black matching onboarding
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: ScreenSize.isTablet ? ScreenSize.spacingMedium : ScreenSize.spacingSmall),
-              
-              Text(
-                'Enter your email address and we\'ll send you a link to reset your password',
-                style: TextStyle(
-                  fontSize: ScreenSize.headingSmall,
-                  color: AppColors.textSecondary, // Gray matching onboarding
-                ),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: ScreenSize.isTablet ? ScreenSize.sectionSpacing : ScreenSize.spacingMedium),
-              
-              // Error message
-              Obx(() => controller.forgotPasswordError.value.isNotEmpty
-                  ? Container(
-                      padding: EdgeInsets.all(ScreenSize.spacingSmall),
-                      margin: EdgeInsets.only(bottom: ScreenSize.spacingSmall),
-                      decoration: BoxDecoration(
-                        color: AppColors.errorLight,
-                        borderRadius: BorderRadius.circular(ScreenSize.inputBorderRadius),
-                        border: Border.all(color: AppColors.error),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline, color: AppColors.error, size: ScreenSize.iconMedium),
-                          SizedBox(width: ScreenSize.spacingSmall),
-                          Expanded(
-                            child: Text(
-                              controller.forgotPasswordError.value,
-                              style: TextStyle(
-                                color: AppColors.error,
-                                fontSize: ScreenSize.textLarge,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : const SizedBox.shrink()),
-              
-              // Email field
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    onChanged: (value) {
-                      controller.forgotPasswordEmail.value = value;
-                      controller.clearForgotPasswordError();
-                    },
-                    style: TextStyle(
-                      fontSize: ScreenSize.textLarge,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      labelStyle: TextStyle(
-                        fontSize: ScreenSize.textMedium,
-                        color: AppColors.primary, // Green color
-                      ),
-                      floatingLabelStyle: TextStyle(
-                        color: AppColors.primary, // Green color
-                      ),
-                      hintText: 'Enter your email',
-                      hintStyle: TextStyle(
-                        fontSize: ScreenSize.textLarge,
-                      ),
-                      prefixIcon: Padding(
-                        padding: EdgeInsets.only(left: ScreenSize.spacingSmall, right: ScreenSize.spacingExtraSmall),
-                        child: Icon(
-                          Icons.email_outlined, 
-                          color: AppColors.textSecondary,
-                          size: ScreenSize.iconMedium,
-                        ),
-                      ),
-                      prefixIconConstraints: BoxConstraints(
-                        minWidth: ScreenSize.iconMedium + ScreenSize.spacingMedium,
-                      ),
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: ScreenSize.inputPadding,
-                        vertical: ScreenSize.isTablet ? ScreenSize.inputPadding : ScreenSize.spacingMedium, // Reduced padding for mobile
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(ScreenSize.inputBorderRadius),
-                        borderSide: BorderSide(color: AppColors.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(ScreenSize.inputBorderRadius),
-                        borderSide: BorderSide(color: AppColors.border),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(ScreenSize.inputBorderRadius),
-                        borderSide: BorderSide(color: AppColors.primary, width: 2), // Green matching login/signup
-                      ),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                ],
-              ),
-              SizedBox(height: ScreenSize.isTablet ? ScreenSize.sectionSpacing : ScreenSize.spacingMedium),
-              
-              // Send reset link button
-              Obx(() => SizedBox(
-                width: double.infinity,
-                height: ScreenSize.buttonHeightLarge,
-                child: ElevatedButton(
-                  onPressed: controller.isForgotPasswordLoading.value ? null : () {
-                    controller.forgotPassword();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary, // Green matching login/signup
-                    foregroundColor: AppColors.textWhite,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(ScreenSize.buttonBorderRadius),
-                    ),
-                    elevation: 0,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ScreenSize.buttonPaddingHorizontal,
-                      vertical: ScreenSize.buttonPaddingVertical,
-                    ),
-                  ),
-                  child: ButtonLoading(
-                    isLoading: controller.isForgotPasswordLoading.value,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        'Send Reset Link',
-                        style: TextStyle(
-                          fontSize: ScreenSize.headingMedium,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ),
-              )),
-              SizedBox(height: ScreenSize.isTablet ? ScreenSize.sectionSpacing : ScreenSize.spacingMedium),
-              
-              // Back to login
-              Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    'Remember your password? ',
-                    style: TextStyle(
-                      fontSize: ScreenSize.textLarge,
-                      color: AppColors.textSecondary, // Gray matching onboarding
+                  // Logo/App Name - Responsive size
+                  Center(
+                    child: Image.asset(
+                      'assets/images/fos_logo.jpg',
+                      width: isDesktop ? 160 : (isTablet ? 140 : 120),
+                      height: isDesktop ? 160 : (isTablet ? 140 : 120),
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.shopping_bag,
+                          size: isDesktop ? 80 : (isTablet ? 70 : 60),
+                          color: AppColors.primary,
+                        );
+                      },
                     ),
                   ),
-                  TextButton(
-                    onPressed: () => AppRoutes.toLogin(),
-                    child: Text(
-                      'Login',
-                      style: TextStyle(
-                        fontSize: ScreenSize.textLarge,
-                        color: AppColors.primary, // Green matching login/signup
-                        fontWeight: FontWeight.w600,
-                      ),
+                  SizedBox(height: isDesktop ? 32 : 24),
+                  
+                  Text(
+                    'Reset Password',
+                    style: TextStyle(
+                      fontSize: ScreenSize.textExtraLarge,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
+                  ),
+                  SizedBox(height: isDesktop ? 12 : 8),
+                  
+                  Text(
+                    'Enter your email to receive reset instructions',
+                    style: TextStyle(
+                      fontSize: ScreenSize.textMedium,
+                      color: AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: isDesktop ? 32 : 20),
+                  
+                  // General Error Message
+                  Obx(() => controller.forgotPasswordError.value.isNotEmpty
+                      ? Container(
+                          padding: EdgeInsets.all(8),
+                          margin: EdgeInsets.only(bottom: isDesktop ? 12 : 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.errorLight,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline, color: AppColors.error, size: isDesktop ? 20 : 16),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  controller.forgotPasswordError.value,
+                                  style: TextStyle(
+                                    color: AppColors.error,
+                                    fontSize: isDesktop ? 14 : 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : const SizedBox.shrink()),
+                  
+                  // Email field
+                  Obx(() => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        onChanged: (value) {
+                          controller.forgotPasswordEmail.value = value;
+                          controller.clearForgotPasswordError();
+                        },
+                        style: TextStyle(
+                          fontSize: isDesktop ? 16 : 14,
+                          color: AppColors.textPrimary,
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: 'Email Address',
+                          labelStyle: TextStyle(
+                            fontSize: isDesktop ? 12 : 10,
+                            color: controller.forgotPasswordError.value.isNotEmpty ? AppColors.error : AppColors.primary,
+                          ),
+                          floatingLabelStyle: TextStyle(
+                            color: controller.forgotPasswordError.value.isNotEmpty ? AppColors.error : AppColors.primary,
+                          ),
+                          hintText: 'Enter your email address',
+                          hintStyle: TextStyle(
+                            fontSize: isDesktop ? 14 : 12,
+                            color: AppColors.textTertiary,
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: isDesktop ? 12 : 10,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.mail_outline, 
+                            color: AppColors.textSecondary,
+                            size: isDesktop ? 20 : 18,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: AppColors.primary, width: 2),
+                          ),
+                          errorText: controller.forgotPasswordError.value.isEmpty ? null : controller.forgotPasswordError.value,
+                        ),
+                      ),
+                      if (controller.forgotPasswordError.value.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            top: 4,
+                            left: 12,
+                          ),
+                          child: Text(
+                            controller.forgotPasswordError.value,
+                            style: TextStyle(
+                              color: AppColors.error,
+                              fontSize: isDesktop ? 12 : 10,
+                            ),
+                          ),
+                        ),
+                    ],
+                  )),
+                  SizedBox(height: isDesktop ? 24 : 16),
+
+                  // Reset Password button
+                  Obx(() => ElevatedButton(
+                    onPressed: controller.isForgotPasswordLoading.value ? null : controller.forgotPassword,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.textWhite,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: isDesktop ? 14 : 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 2,
+                      shadowColor: AppColors.primary.withOpacity(0.3),
+                    ),
+                    child: controller.isForgotPasswordLoading.value
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.textWhite),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Sending...',
+                                style: TextStyle(
+                                  fontSize: isDesktop ? 14 : 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textWhite,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            'Send Reset Link',
+                            style: TextStyle(
+                              fontSize: isDesktop ? 14 : 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textWhite,
+                            ),
+                          ),
+                  )),
+                  SizedBox(height: isDesktop ? 24 : 16),
+
+                  // Back to login link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Remember your password? ",
+                        style: TextStyle(
+                          fontSize: isDesktop ? 12 : 10,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Get.toNamed('/login'),
+                        child: Text(
+                          'Sign In',
+                          style: TextStyle(
+                            fontSize: isDesktop ? 12 : 10,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              SizedBox(height: ScreenSize.spacingSmall),
-            ],
+            ),
           ),
         ),
       ),

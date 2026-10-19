@@ -2,10 +2,11 @@ name: ecommerceapp
 description: "The official mobile application for FOS Productions, providing a seamless e-commerce experience."
 publish_to: 'none'
 
-version: 1.0.4+11
+version: 1.0.12+20
 
 environment:
-  sdk: ^3.9.0
+  sdk: ^3.5.0
+  flutter: ">=3.22.0"
 
 dependencies:
   flutter:
@@ -23,27 +24,47 @@ dependencies:
   hive_flutter: ^1.1.0
   
   # Network
-  dio: ^5.4.0
-  
+  dio: ^5.9.2
+
+  image_picker: ^1.1.2              # Camera/Gallery picker
+  google_fonts: ^6.2.1             # Font presets
   # Utils
   flutter_screenutil: ^5.9.0
   cached_network_image: ^3.3.1
   url_launcher: ^6.3.2
   package_info_plus: ^8.3.1
-  share_plus: ^10.1.4
+  share_plus: ^12.0.1
   webview_flutter: ^4.13.0
   path_provider: ^2.1.5
   flutter_svg: ^2.2.3
-  
+  crypto: ^3.0.3
+  open_file: ^3.3.2
+  font_awesome_flutter: ^11.0.0
+
   # Location
   geolocator: ^13.0.4
-  permission_handler: ^11.4.0
+  permission_handler: ^12.0.1
   geocoding: ^4.0.0
 
+  # Media (digital preview: video 10 sec then pay popup)
+  video_player: ^2.8.1
+  just_audio: ^0.9.36
+  audio_session: ^0.1.21
+
+  flutter_local_notifications: ^17.0.0
+
   # Payment
-  flutter_stripe: ^11.5.0
+  flutter_stripe: ^12.5.0
   sign_in_with_apple: ^7.0.1
-  google_sign_in: ^7.2.0
+  google_sign_in: ^6.2.1
+  archive: ^4.0.9
+  gal: ^2.3.2
+  # Local copy — pub.dev 1.1.1 breaks AGP 8+ (AndroidManifest package=).
+  whatsapp_stickers_plus:
+    path: plugins/whatsapp_stickers_plus
+  image: ^4.8.0
+  flutter_image_compress: ^2.3.0
+  appinio_social_share: ^0.3.2
 
 dev_dependencies:
   flutter_test:
@@ -61,5 +82,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
-    - assets/images/fos_logo.jpg
-    - assets/images/google.png
+    - assets/images/fos_logo_small.jpg
+    - assets/category/
+    - assets/whatsapp.png
+    - assets/data/fos_lens_quotes.json
+    - assets/watch_faces/catalog/watch_faces.json
+    - assets/watch_faces/previews/
+    - assets/watch_faces/previews_fruit/

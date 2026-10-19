@@ -5,6 +5,7 @@ import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/cart_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 
 /// Cart Screen
 /// Shows user's shopping cart items
@@ -58,21 +59,40 @@ class CartScreen extends StatelessWidget {
                   },
                 )
               : const SizedBox.shrink()),
-          // Refresh button
-          IconButton(
-            icon: Icon(Icons.refresh, size: ScreenSize.iconSmall),
-            onPressed: () => controller.loadCart(),
-          ),
+          // Refresh button with real-time status
+          Obx(() {
+            if (controller.isRefreshing.value) {
+              return Padding(
+                padding: EdgeInsets.all(ScreenSize.paddingSmall),
+                child: SizedBox(
+                  width: ScreenSize.iconSmall,
+                  height: ScreenSize.iconSmall,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.textWhite),
+                  ),
+                ),
+              );
+            } else {
+              return IconButton(
+                icon: Icon(Icons.refresh, size: ScreenSize.iconSmall),
+                onPressed: () => controller.forceRefreshCart(),
+              );
+            }
+          }),
         ],
       ),
       body: Obx(() {
-        if (controller.isLoading.value) {
+        if (SilentLoading.blockUi(
+          isLoading: controller.isLoading.value,
+          hasContent: controller.cartItems.isNotEmpty,
+        )) {
           return const LoadingWidget();
         }
         
         if (controller.cartItems.isEmpty) {
           return RefreshIndicator(
-            onRefresh: () => controller.loadCart(),
+            onRefresh: () => controller.forceRefreshCart(),
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: SizedBox(
@@ -84,8 +104,79 @@ class CartScreen extends StatelessWidget {
         }
         
         return RefreshIndicator(
-          onRefresh: () => controller.loadCart(),
-          child: _buildCartContent(controller),
+          onRefresh: () => controller.forceRefreshCart(),
+          child: Column(
+            children: [
+              // Real-time status indicator
+              Obx(() {
+                if (controller.lastError.value.isNotEmpty) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(ScreenSize.paddingSmall),
+                    margin: EdgeInsets.all(ScreenSize.paddingSmall),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
+                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: AppColors.error, size: ScreenSize.iconSmall),
+                        SizedBox(width: ScreenSize.spacingSmall),
+                        Expanded(
+                          child: Text(
+                            'Sync error: ${controller.lastError.value}',
+                            style: TextStyle(
+                              color: AppColors.error,
+                              fontSize: ScreenSize.textSmall,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.refresh, size: ScreenSize.iconSmall),
+                          onPressed: () => controller.forceRefreshCart(),
+                        ),
+                      ],
+                    ),
+                  );
+                } else if (controller.isRefreshing.value) {
+                  return Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(ScreenSize.paddingSmall),
+                    margin: EdgeInsets.all(ScreenSize.paddingSmall),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(ScreenSize.borderRadiusSmall),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: ScreenSize.iconSmall,
+                          height: ScreenSize.iconSmall,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                          ),
+                        ),
+                        SizedBox(width: ScreenSize.spacingSmall),
+                        Text(
+                          'Syncing cart...',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontSize: ScreenSize.textSmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              }),
+              // Cart content
+              Expanded(child: _buildCartContent(controller)),
+            ],
+          ),
         );
       }),
       bottomNavigationBar: Obx(() => controller.cartItems.isNotEmpty
@@ -169,34 +260,16 @@ class CartScreen extends StatelessWidget {
         children: [
           // Product Image
           GestureDetector(
-            onTap: () => controller.navigateToProductDetails(item['product_id']),
+            onTap: () => controller.navigateToProductDetails(
+              item['product_id'],
+              preview: item,
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(ScreenSize.tileBorderRadius),
                 bottomLeft: Radius.circular(ScreenSize.tileBorderRadius),
               ),
-              child: CachedNetworkImage(
-                imageUrl: item['image'] ?? '',
-                width: 90,
-                height: 90,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  width: 90,
-                  height: 90,
-                  color: AppColors.backgroundGrey,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  width: 90,
-                  height: 90,
-                  color: AppColors.backgroundGrey,
-                  child: Icon(
-                    Icons.image_not_supported,
-                    size: ScreenSize.iconMedium,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ),
+              child: _cartItemImage(item['image'], 90),
             ),
           ),
           
@@ -209,7 +282,10 @@ class CartScreen extends StatelessWidget {
                 children: [
                   // Product Name
                   GestureDetector(
-                    onTap: () => controller.navigateToProductDetails(item['product_id']),
+                    onTap: () => controller.navigateToProductDetails(
+              item['product_id'],
+              preview: item,
+            ),
                     child: Text(
                       item['product_name'] ?? '',
                       style: TextStyle(
@@ -362,19 +438,6 @@ class CartScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  
-                  // Stock warning
-                  if (item['in_stock'] == false)
-                    Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text(
-                        'Out of Stock',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.error,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -383,7 +446,27 @@ class CartScreen extends StatelessWidget {
       ),
     );
   }
-  
+
+  Widget _cartItemImage(dynamic image, double size) {
+    final url = (image?.toString() ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image_not_supported, size: ScreenSize.iconMedium, color: AppColors.textTertiary),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      placeholder: (context, u) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+      errorWidget: (context, u, e) => Container(width: size, height: size, color: AppColors.backgroundGrey, child: Icon(Icons.image_not_supported, size: ScreenSize.iconMedium, color: AppColors.textTertiary)),
+    );
+  }
+
   Widget _buildBottomBar(CartController controller) {
     return Container(
       padding: EdgeInsets.all(ScreenSize.spacingMedium),

@@ -22,18 +22,52 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.312606208197-gcvr4m6qt5r6mklb6b1serhpblnkbem8</string>
+				<string>com.fruitsofspirit.ecommerce</string>
+				<string>com.fruitsofspirit.ecommerce.stripe</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GIDClientID</key>
+	<string>312606208197-gcvr4m6qt5r6mklb6b1serhpblnkbem8.apps.googleusercontent.com</string>
+	<key>GMSApiKey</key>
+	<string>AIzaSyCUMDyjVovKcRPLk1zrLsvF6Vl9a-hRcEM</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>This app needs calendar access to help you save events and share product availability dates.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan cards for payments.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>This app needs contacts access to help you share products with friends and family.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>This app needs location access to show nearby stores and provide real-time delivery tracking even in the background.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs location access to show nearby stores and calculate delivery estimates while using the app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access for voice commands and audio recording features.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app needs permission to save sticker images to your photo gallery.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo library access to save your order receipts.</string>
+	<string>This app needs photo library access to save your order receipts and sticker packs.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -64,8 +98,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -74,5 +106,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
 </dict>
 </plist>

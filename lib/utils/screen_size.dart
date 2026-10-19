@@ -24,46 +24,46 @@ class ScreenSize {
     _bottomBarHeight = _mediaQueryData.padding.bottom;
 
     final shortestSide = _mediaQueryData.size.shortestSide;
+    final width = _mediaQueryData.size.width;
 
     // logic according to your reference guide
     isTablet = shortestSide >= 600;
-    isSmallTablet = shortestSide >= 600 && shortestSide < 768;
-    isLargeTablet = shortestSide >= 768;
+    isSmallTablet = shortestSide >= 600 && shortestSide < 800;
+    isLargeTablet = shortestSide >= 800;
     isSmallPhone = shortestSide < 360;
     isMediumPhone = shortestSide >= 360 && shortestSide < 414;
     isLargePhone = shortestSide >= 414 && shortestSide < 600;
 
     ScreenUtil.init(
       context,
-      // Based on iPhone X (375x812) for phones and iPad (768x1024) for tablets
-      designSize: isTablet ? const Size(768, 1024) : const Size(375, 812),
+      // More realistic tablet design size for better aspect ratio compatibility
+      designSize: isTablet ? const Size(834, 1112) : const Size(375, 812),
       minTextAdapt: true,
       splitScreenMode: true,
     );
   }
 
-  // --- Scaling Factors (Improved for readability) ---
+  // --- Scaling Factors (Increased for Professional Tablet Experience) ---
   static double get _fontScale {
-    if (isLargeTablet) return 1.2; // Reduced for better tablet readability
-    if (isSmallTablet) return 1.1; // Reduced for better tablet readability
-    if (isLargePhone) return 1.1; // Pro Max & Ultra phones
-    if (isSmallPhone) return 0.90; // SE & small Androids
+    if (screenWidth >= 1000) return 1.45;
+    if (screenWidth >= 768) return 1.3;
+    if (isTablet) return 1.15;
+    if (isLargePhone) return 1.1;
     return 1.0;
   }
 
   static double get _spacingScale {
-    if (isLargeTablet) return 1.2; // Reduced for better tablet spacing
-    if (isSmallTablet) return 1.1; // Reduced for better tablet spacing
+    if (screenWidth >= 1000) return 1.5;
+    if (screenWidth >= 768) return 1.35;
+    if (isTablet) return 1.2;
     if (isLargePhone) return 1.1;
-    if (isSmallPhone) return 0.90;
     return 1.0;
   }
 
   static double get _iconScale {
-    if (isLargeTablet) return 1.2; // Reduced for better tablet icons
-    if (isSmallTablet) return 1.1; // Reduced for better tablet icons
-    if (isLargePhone) return 1.1;
-    if (isSmallPhone) return 0.90;
+    if (screenWidth >= 1000) return 1.5;
+    if (screenWidth >= 768) return 1.35;
+    if (isTablet) return 1.2;
     return 1.0;
   }
 
@@ -113,11 +113,14 @@ class ScreenSize {
   static int get gridCrossAxisCount => isTablet ? 3 : 2;
   static double get gridSpacing => (16 * _spacingScale).w;
 
-  static double get productCardImageHeight => (150 * _spacingScale).h;
-  static double get productCardHorizontalImageHeight => (120 * _spacingScale).h;
-  static double get productCardAspectRatio => isTablet ? 0.75 : 0.6; // Increased card height for tablets with 3 columns
-  static double get productCardHorizontalWidth => (200 * _spacingScale).w;
-  static double get productCardHorizontalHeight => (180 * _spacingScale).h;
+  static double get productCardImageHeight => (isTablet ? 145 : 110) * _spacingScale.h;
+  static double get productCardHorizontalImageHeight => (isTablet ? 105 : 75) * _spacingScale.h;
+  static double get productCardAspectRatio => screenWidth >= 768 ? 0.7 : (isTablet ? 0.9 : 0.8); 
+  static double get productCardHorizontalWidth => (isTablet ? 155 : 120) * _spacingScale.w;
+  static double get productCardHeight => (isTablet ? 250 : 210) * _spacingScale.h;
+  static double get productCardHorizontalHeight => (isTablet ? 200 : 175) * _spacingScale.h;
+  static double get productCardWidth => (isTablet ? 155 : 120) * _spacingScale.w;
+  static double get productCardBorderRadius => (12 * _spacingScale).r;
 
   static double get bannerHeight => (180 * _spacingScale).h;
   static double get categoryIconSize => (70 * _iconScale).w;

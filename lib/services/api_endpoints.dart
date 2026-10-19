@@ -6,6 +6,8 @@ class ApiEndpoints {
   static const String login = 'auth/login.php';
   static const String forgotPassword = 'auth/forgot-password.php';
   static const String resetPassword = 'auth/reset-password.php';
+  static const String googleLogin = 'auth/google-login.php';
+  static const String appleLogin = 'auth/apple-login.php';
   
   // User
   static const String userProfile = 'user/profile.php';
@@ -19,6 +21,8 @@ class ApiEndpoints {
   static const String orderTracking = 'orders/tracking.php';
   static const String orderReorder = 'orders/reorder.php';
   static const String orderInvoice = 'orders/invoice.php';
+  static const String orderDownload = 'orders/download.php';
+  static const String orderHasPurchased = 'orders/has_purchased.php';
   static const String orderCancel = 'orders/cancel.php';
   static const String orderReturn = 'orders/return.php';
   
@@ -64,7 +68,10 @@ class ApiEndpoints {
   static const String newArrivals = 'products/new-arrivals.php';
   static const String discountedProducts = 'products/discounted.php';
   static const String topRatedProducts = 'products/top-rated.php';
-  
+  static const String digitalProducts = 'products/digital.php';
+  static const String digitalPreview = 'products/digital_preview.php';
+  static const String stickerDownload = 'stickers/download.php';
+
   // Banners
   static const String bannersList = 'banners/list.php';
   
@@ -88,6 +95,7 @@ class ApiEndpoints {
   static const String notificationMarkRead = 'notifications/mark-read.php';
   static const String notificationReadAll = 'notifications/read-all.php';
   static const String notificationUnreadCount = 'notifications/unread-count.php';
+  static const String notificationSettings = 'notifications/settings.php';
   
   // Cart
   static const String cartList = 'cart/list.php';

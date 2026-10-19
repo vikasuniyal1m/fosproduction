@@ -4,6 +4,7 @@ import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/profile_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 
 /// Edit Profile Screen
 /// Allows user to edit their profile information
@@ -36,7 +37,10 @@ class EditProfileScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: Obx(() => controller.isLoading.value
+        child: Obx(() => SilentLoading.blockUi(
+              isLoading: controller.isLoading.value,
+              hasContent: controller.userName.value.isNotEmpty,
+            )
             ? const LoadingWidget()
             : SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),

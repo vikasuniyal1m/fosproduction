@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../../controllers/profile_controller.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
-import '../../controllers/profile_controller.dart';
+import '../../utils/getx_registry.dart';
 
 /// Add/Edit Payment Method Screen
 /// Allows user to add or edit payment methods (Card, UPI, Wallet, Net Banking)
@@ -25,7 +26,7 @@ class _AddEditPaymentMethodScreenState extends State<AddEditPaymentMethodScreen>
     // Initialize form only once
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isInitialized) {
-        final controller = Get.find<ProfileController>();
+        final controller = GetXRegistry.profile();
         if (widget.paymentMethod != null) {
           controller.initializePaymentMethodForm(widget.paymentMethod!);
         } else {

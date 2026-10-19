@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/checkout_controller.dart';
+import '../../utils/getx_registry.dart';
 import '../../widgets/loading_widget.dart';
 import '../../routes/app_routes.dart';
 
@@ -14,7 +15,7 @@ class CheckoutScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
-    final controller = Get.put(CheckoutController());
+    final controller = GetXRegistry.checkout();
     
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -35,9 +36,15 @@ class CheckoutScreen extends StatelessWidget {
           onPressed: () => Get.back(),
         ),
       ),
-      body: Obx(() => controller.isLoading.value
-          ? const LoadingWidget()
-          : _buildCheckoutContent(controller)),
+      body: Obx(() {
+        if (controller.isLoading.value) return const LoadingWidget();
+        // Digital: checkout form mat dikhao, seedha Stripe pe bhejo
+        if (controller.isDigitalQuickPay && controller.items.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => controller.tryGoDirectToStripe());
+          return const LoadingWidget();
+        }
+        return _buildCheckoutContent(controller);
+      }),
     );
   }
   
@@ -52,13 +59,15 @@ class CheckoutScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Order Items
+              // Order Items (physical only; digital checkout skips this screen)
               _buildOrderItems(controller),
               SizedBox(height: ScreenSize.spacingLarge),
               
-              // Shipping Address
-              _buildShippingAddress(controller),
-              SizedBox(height: ScreenSize.spacingLarge),
+              // Shipping Address – not required for digital products
+              if (!controller.isDigitalQuickPay) ...[
+                _buildShippingAddress(controller),
+                SizedBox(height: ScreenSize.spacingLarge),
+              ],
               
               // Payment Method
               _buildPaymentMethod(controller),
@@ -79,6 +88,10 @@ class CheckoutScreen extends StatelessWidget {
   }
   
   Widget _buildOrderItems(CheckoutController controller) {
+    final physicalItems = controller.items
+        .where((item) => item['is_digital'] != true && item['is_digital'] != 1)
+        .toList();
+    if (physicalItems.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -91,7 +104,7 @@ class CheckoutScreen extends StatelessWidget {
           ),
         ),
         SizedBox(height: ScreenSize.spacingSmall),
-        ...controller.items.map((item) => _buildOrderItemCard(item)),
+        ...physicalItems.map((item) => _buildOrderItemCard(item)),
       ],
     );
   }
@@ -110,22 +123,7 @@ class CheckoutScreen extends StatelessWidget {
           // Product Image
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              item['image'] ?? '',
-              width: ScreenSize.iconLarge * 1.5,
-              height: ScreenSize.iconLarge * 1.5,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: ScreenSize.iconLarge * 1.5,
-                height: ScreenSize.iconLarge * 1.5,
-                color: AppColors.backgroundGrey,
-                child: Icon(
-                  Icons.image, 
-                  color: AppColors.textTertiary,
-                  size: ScreenSize.iconMedium,
-                ),
-              ),
-            ),
+            child: _buildItemImage((item['image'] ?? '').toString().trim(), ScreenSize.iconLarge * 1.5),
           ),
           SizedBox(width: ScreenSize.spacingMedium),
           
@@ -177,7 +175,30 @@ class CheckoutScreen extends StatelessWidget {
       ),
     );
   }
-  
+
+  Widget _buildItemImage(String imageUrl, double size) {
+    if (imageUrl.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
+      );
+    }
+    return Image.network(
+      imageUrl,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => Container(
+        width: size,
+        height: size,
+        color: AppColors.backgroundGrey,
+        child: Icon(Icons.image, color: AppColors.textTertiary, size: ScreenSize.iconMedium),
+      ),
+    );
+  }
+
   Widget _buildShippingAddress(CheckoutController controller) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +215,7 @@ class CheckoutScreen extends StatelessWidget {
               ),
             ),
             TextButton(
-              onPressed: () => AppRoutes.toAddAddress(),
+              onPressed: () => Get.toNamed(AppRoutes.addAddress, arguments: {'from_checkout': true}),
               child: Text(
                 'Add New',
                 style: TextStyle(fontSize: ScreenSize.textMedium),
@@ -224,7 +245,7 @@ class CheckoutScreen extends StatelessWidget {
                 ),
                 SizedBox(height: ScreenSize.spacingSmall),
                 ElevatedButton(
-                  onPressed: () => AppRoutes.toAddAddress(),
+                  onPressed: () => Get.toNamed(AppRoutes.addAddress, arguments: {'from_checkout': true}),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.textWhite,
@@ -528,7 +549,7 @@ class CheckoutScreen extends StatelessWidget {
                   ),
                   SizedBox(height: ScreenSize.spacingSmall),
                   SizedBox(
-                    height: ScreenSize.iconLarge * 2.5,
+                    height: ScreenSize.iconLarge * 3.2,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       itemCount: controller.availableCoupons.length,
@@ -637,7 +658,7 @@ class CheckoutScreen extends StatelessWidget {
         width: ScreenSize.isLargeTablet ? ScreenSize.widthPercent(25) : 
                (ScreenSize.isSmallTablet ? ScreenSize.widthPercent(30) : ScreenSize.widthPercent(40)),
         margin: EdgeInsets.only(right: ScreenSize.spacingSmall),
-        padding: EdgeInsets.all(ScreenSize.spacingMedium),
+        padding: EdgeInsets.symmetric(horizontal: ScreenSize.spacingMedium, vertical: ScreenSize.spacingSmall),
         decoration: BoxDecoration(
           color: AppColors.primary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
@@ -646,17 +667,17 @@ class CheckoutScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min, // Take only the space needed
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
-                Icon(Icons.local_offer, color: AppColors.primary, size: 20),
+                Icon(Icons.local_offer, color: AppColors.primary, size: 16),
                 SizedBox(width: ScreenSize.spacingSmall),
-                Flexible(
+                Expanded(
                   child: Text(
                     coupon['code'] as String,
                     style: TextStyle(
-                      fontSize: ScreenSize.textMedium,
+                      fontSize: ScreenSize.textSmall,
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
                     ),

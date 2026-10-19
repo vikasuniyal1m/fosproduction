@@ -1,0 +1,134 @@
+# =============================================================================
+# GitHub Actions — AAB + IPA Build (Play Store / App Store upload NAHI abhi)
+# =============================================================================
+#
+# SETUP STEPS (sirf ek baar karna hai):
+#
+# STEP 1 — Project me ye files honi chahiye (already hain tumhare project me):
+#   android/key.properties          → password, alias
+#   android/app/upload-keystore.jks → signing keystore
+#
+# STEP 2 — ANDROID_SIGNING secret banao (terminal me):
+#   cd android
+#   zip ../signing.zip key.properties app/upload-keystore.jks
+#   base64 -i ../signing.zip | pbcopy
+#   (output clipboard me copy ho jayega)
+#
+# STEP 3 — GitHub pe secret daalo:
+#   GitHub repo kholo → Settings → Secrets and variables → Actions
+#   → New repository secret
+#   → Name:  ANDROID_SIGNING
+#   → Value: paste karo (Step 2 se jo copy hua)
+#   → Save
+#
+# STEP 4 — Workflow file push karo:
+#   git add .github/workflows/android-deploy.yml
+#   git commit -m "Add CI build workflow"
+#   git push origin main
+#
+# STEP 5 — Build check karo:
+#   GitHub repo → Actions tab → "Build AAB & IPA" workflow
+#   → green tick = success
+#   → android-aab / ios-ipa artifact se download karo
+#
+# AUTO PICK (manual set karne ki zaroorat nahi):
+#   - Flutter version  → pubspec.yaml se
+#   - Password, alias  → key.properties se (ANDROID_SIGNING unzip ke baad)
+#   - Keystore file    → upload-keystore.jks se
+#   - Build number     → github.run_number se auto
+#
+# iOS (optional, baad me):
+#   IOS_SIGNING secret banao — certificates + provisioning profile zip karke base64
+#   iOS job abhi continue-on-error hai, Android pehle test karo
+#
+# =============================================================================
+
+name: Build AAB & IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Build AAB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Read Flutter version from pubspec.yaml
+        id: flutter
+        run: |
+          VER=$(grep -E '^\s*flutter:' pubspec.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "version=${VER:-3.22.0}" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Load signing from project (key.properties + keystore)
+        run: |
+          echo "${{ secrets.ANDROID_SIGNING }}" | base64 --decode > signing.zip
+          unzip -o signing.zip -d android/
+          rm signing.zip
+          cat android/key.properties
+
+      - name: Build AAB
+        run: flutter build appbundle --release --build-number=${{ github.run_number }}
+
+      - name: Save AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+
+  ios:
+    name: Build IPA
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Flutter version from pubspec.yaml
+        id: flutter
+        run: |
+          VER=$(grep -E '^\s*flutter:' pubspec.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "version=${VER:-3.22.0}" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Load iOS signing (optional)
+        run: |
+          if [ -n "${{ secrets.IOS_SIGNING }}" ]; then
+            echo "${{ secrets.IOS_SIGNING }}" | base64 --decode > ios-signing.zip
+            unzip -o ios-signing.zip -d $HOME
+            rm ios-signing.zip
+          fi
+
+      - name: CocoaPods
+        run: cd ios && pod install
+
+      - name: Build IPA
+        run: flutter build ipa --release --build-number=${{ github.run_number }}
+
+      - name: Save IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/ios/ipa/*.ipa

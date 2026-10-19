@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "312606208197",
+    "project_id": "fos-ecommerce-oauth",
+    "storage_bucket": "fos-ecommerce-oauth.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:312606208197:android:a1b2c3d4e5f67890",
+        "android_client_info": {
+          "package_name": "com.fosproduction.ecommerceapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "312606208197-fb05c8kpmnoeijmblv40nhac9fdsqoc6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fosproduction.ecommerceapp",
+            "certificate_hash": "07a63f906537aa09dc3c15b56366e214adf2aa0e"
+          }
+        },
+        {
+          "client_id": "312606208197-jj89cr5qoh9htinrhb42nll6mlcaqgi7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fosproduction.ecommerceapp",
+            "certificate_hash": "e8b619cc80feeaa322190ef5bc195743c1e03b21"
+          }
+        },
+        {
+          "client_id": "312606208197-k2tqmk7j9be767lk629kl25usp0noo35.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyPlaceholderDownloadFromFirebaseIfNeeded"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "312606208197-k2tqmk7j9be767lk629kl25usp0noo35.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

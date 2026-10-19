@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
+import '../utils/data_cache.dart';
+import '../utils/getx_registry.dart';
 
 /// Coupon Controller
 /// Manages coupon listing and selection
@@ -20,12 +22,24 @@ class CouponController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _loadCachedCoupons();
     loadCoupons();
+    GetXRegistry.cart().loadCart();
+  }
+
+  void _loadCachedCoupons() {
+    final cached = DataCache.loadList(DataCache.coupons);
+    if (cached != null && cached.isNotEmpty) {
+      coupons.value = cached;
+      usedCoupons.value = coupons.where((c) => c['is_used'] == true).toList();
+    }
   }
   
   /// Load all available coupons
   Future<void> loadCoupons() async {
-    isLoading.value = true;
+    if (coupons.isEmpty) {
+      isLoading.value = true;
+    }
     try {
       // Get all coupons
       final response = await _apiService.get(
@@ -39,10 +53,11 @@ class CouponController extends GetxController {
         return coupon['is_used'] == true;
       }).toList();
       usedCoupons.value = usedCouponsList;
-      
+      await DataCache.saveList(DataCache.coupons, coupons.toList());
     } catch (e) {
-      ApiService.showErrorSnackbar(e);
-      coupons.value = [];
+      if (coupons.isEmpty) {
+        ApiService.showErrorSnackbar(e);
+      }
     } finally {
       isLoading.value = false;
     }
@@ -53,6 +68,60 @@ class CouponController extends GetxController {
     return coupons.any((coupon) => 
       coupon['code'] == couponCode && coupon['is_used'] == true
     );
+  }
+
+  static double couponMinAmount(Map<String, dynamic> coupon) {
+    final candidates = [
+      coupon['minimum_amount'],
+      coupon['minimum_purchase'],
+      coupon['min_amount'],
+      coupon['min_purchase'],
+      coupon['minimum_order_value'],
+      coupon['min_order_amount'],
+      coupon['minimum_order_amount'],
+    ];
+    if (coupon['data'] is num) {
+      candidates.add(coupon['data']);
+    }
+    for (final v in candidates) {
+      if (v == null) continue;
+      final parsed = v is num
+          ? v.toDouble()
+          : double.tryParse(v.toString());
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  /// Cart must have items and meet minimum order for this coupon.
+  bool isCouponEligible(
+    Map<String, dynamic> coupon,
+    double cartSubtotal, {
+    required bool cartHasItems,
+  }) {
+    if (isCouponUsed(coupon['code']?.toString() ?? '')) return false;
+    if (!cartHasItems || cartSubtotal <= 0) return false;
+    final min = couponMinAmount(coupon);
+    if (min > 0 && cartSubtotal < min) return false;
+    return true;
+  }
+
+  String couponDisabledReason(
+    Map<String, dynamic> coupon,
+    double cartSubtotal, {
+    required bool cartHasItems,
+  }) {
+    if (isCouponUsed(coupon['code']?.toString() ?? '')) {
+      return 'Already used';
+    }
+    if (!cartHasItems || cartSubtotal <= 0) {
+      return 'Add products to cart';
+    }
+    final min = couponMinAmount(coupon);
+    if (min > 0 && cartSubtotal < min) {
+      return 'Min order \$${min.toStringAsFixed(0)}';
+    }
+    return '';
   }
   
   /// Select coupon to apply in checkout

@@ -22,9 +22,11 @@ class CustomBottomNavBar extends StatelessWidget {
     ScreenSize.init(context);
     
     return Container(
-      // Use minimum height to prevent overflow, let content determine actual height
+      // Use responsive height based on screen size
       constraints: BoxConstraints(
-        minHeight: ScreenSize.bottomNavHeight + ScreenSize.bottomBarHeight,
+        minHeight: ScreenSize.screenWidth >= 1200 ? ScreenSize.bottomNavHeight + ScreenSize.bottomBarHeight : 
+                 (ScreenSize.screenWidth >= 1000 ? ScreenSize.bottomNavHeight + ScreenSize.bottomBarHeight : 
+                 (ScreenSize.screenWidth >= 768 ? ScreenSize.bottomNavHeight + ScreenSize.bottomBarHeight - 4 : ScreenSize.bottomNavHeight + ScreenSize.bottomBarHeight)),
       ),
       decoration: BoxDecoration(
         color: AppColors.bottomNavBackground,
@@ -52,9 +54,9 @@ class CustomBottomNavBar extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: EdgeInsets.symmetric(
-            vertical: ScreenSize.isSmallPhone 
-                ? ScreenSize.spacingExtraSmall 
-                : ScreenSize.spacingSmall,
+            vertical: ScreenSize.screenWidth >= 1200 ? ScreenSize.spacingSmall : 
+                   (ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall : 
+                   (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingTiny : ScreenSize.spacingSmall)),
           ),
           constraints: BoxConstraints(
             minHeight: 0,
@@ -67,21 +69,21 @@ class CustomBottomNavBar extends StatelessWidget {
             children: [
               Icon(
                 isSelected ? item.selectedIcon : item.icon,
-                size: ScreenSize.isSmallPhone 
-                    ? ScreenSize.bottomNavIconSize * 0.9 
-                    : ScreenSize.bottomNavIconSize,
+                size: ScreenSize.screenWidth >= 1200 ? ScreenSize.bottomNavIconSize : 
+                     (ScreenSize.screenWidth >= 1000 ? ScreenSize.bottomNavIconSize : 
+                     (ScreenSize.screenWidth >= 768 ? ScreenSize.bottomNavIconSize * 0.9 : ScreenSize.bottomNavIconSize)),
                 color: isSelected
                     ? AppColors.bottomNavSelected
                     : AppColors.bottomNavUnselected,
               ),
-              SizedBox(height: ScreenSize.isSmallPhone ? 1 : 2),
+              SizedBox(height: ScreenSize.screenWidth >= 1200 ? 2 : (ScreenSize.screenWidth >= 1000 ? 2 : (ScreenSize.screenWidth >= 768 ? 1 : 2))),
               Flexible(
                 child: Text(
                   item.label,
                   style: TextStyle(
-                    fontSize: ScreenSize.isSmallPhone 
-                        ? ScreenSize.textSmall * 0.9 
-                        : ScreenSize.textSmall,
+                    fontSize: ScreenSize.screenWidth >= 1200 ? ScreenSize.textSmall : 
+                           (ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : 
+                           (ScreenSize.screenWidth >= 768 ? ScreenSize.textExtraSmall : ScreenSize.textSmall)),
                     color: isSelected
                         ? AppColors.bottomNavSelected
                         : AppColors.bottomNavUnselected,

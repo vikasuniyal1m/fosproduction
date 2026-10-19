@@ -77,13 +77,15 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundColor: AppColors.background,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+        icon: Icon(Icons.arrow_back, 
+                  size: ScreenSize.screenWidth >= 1000 ? ScreenSize.iconMedium : ScreenSize.iconMedium,
+                  color: AppColors.textPrimary),
         onPressed: () => Get.back(),
       ),
       title: _buildSearchBar(),
       centerTitle: false,
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
+        preferredSize: Size.fromHeight(1),
         child: Container(
           height: 1,
           color: AppColors.border.withOpacity(0.3),
@@ -94,10 +96,10 @@ class _SearchScreenState extends State<SearchScreen> {
   
   Widget _buildSearchBar() {
     return Container(
-      height: 45,
+      height: ScreenSize.screenWidth >= 1000 ? 52 : (ScreenSize.screenWidth >= 768 ? 48 : 45),
       decoration: BoxDecoration(
         color: AppColors.backgroundGrey,
-        borderRadius: BorderRadius.circular(25),
+        borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 26 : (ScreenSize.screenWidth >= 768 ? 24 : 25)),
         border: Border.all(
           color: AppColors.border.withOpacity(0.5),
           width: 1,
@@ -112,17 +114,17 @@ class _SearchScreenState extends State<SearchScreen> {
           }
         },
         decoration: InputDecoration(
-          hintText: 'Search for products, brands...',
+          hintText: 'Search for products',
           hintStyle: TextStyle(
             color: AppColors.textTertiary,
-            fontSize: ScreenSize.textMedium,
+            fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : ScreenSize.textMedium,
           ),
           prefixIcon: Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: EdgeInsets.all(ScreenSize.screenWidth >= 1000 ? 14.0 : 12.0),
             child: Icon(
               Icons.search_rounded,
               color: AppColors.textSecondary,
-              size: 22,
+              size: ScreenSize.screenWidth >= 1000 ? 24 : 22,
             ),
           ),
           suffixIcon: Obx(() => _controller.searchQuery.value.isNotEmpty
@@ -130,7 +132,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   icon: Icon(
                     Icons.clear_rounded,
                     color: AppColors.textSecondary,
-                    size: 20,
+                    size: ScreenSize.screenWidth >= 1000 ? 22 : 20,
                   ),
                   onPressed: () {
                     _searchController.clear();
@@ -139,10 +141,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 )
               : const SizedBox.shrink()),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: ScreenSize.screenWidth >= 1000 ? 18 : 16, 
+            vertical: ScreenSize.screenWidth >= 1000 ? 14 : 12
+          ),
         ),
         style: TextStyle(
-          fontSize: ScreenSize.textMedium,
+          fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : ScreenSize.textMedium,
           color: AppColors.textPrimary,
         ),
       ),
@@ -151,11 +156,11 @@ class _SearchScreenState extends State<SearchScreen> {
   
   Widget _buildInitialState() {
     return SingleChildScrollView(
-      padding: EdgeInsets.all(ScreenSize.paddingLarge),
+      padding: EdgeInsets.all(ScreenSize.screenWidth >= 1000 ? ScreenSize.paddingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.paddingMedium : ScreenSize.paddingMedium)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: ScreenSize.spacingLarge),
+          SizedBox(height: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge)),
           
           // Welcome Section
           Column(
@@ -164,7 +169,7 @@ class _SearchScreenState extends State<SearchScreen> {
               Text(
                 'What are you looking for?',
                 style: TextStyle(
-                  fontSize: ScreenSize.headingLarge,
+                  fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.headingExtraLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingLarge : ScreenSize.headingLarge),
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
                 ),
@@ -173,14 +178,14 @@ class _SearchScreenState extends State<SearchScreen> {
               Text(
                 'Discover amazing products',
                 style: TextStyle(
-                  fontSize: ScreenSize.textMedium,
+                  fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.textMedium : ScreenSize.textMedium),
                   color: AppColors.textSecondary,
                 ),
               ),
             ],
           ),
           
-          SizedBox(height: ScreenSize.sectionSpacing),
+          SizedBox(height: ScreenSize.screenWidth >= 1000 ? ScreenSize.sectionSpacing : (ScreenSize.screenWidth >= 768 ? ScreenSize.sectionSpacing : ScreenSize.sectionSpacing)),
           
           // Recent Searches
           if (_controller.recentSearches.isNotEmpty) ...[
@@ -191,14 +196,14 @@ class _SearchScreenState extends State<SearchScreen> {
                   children: [
                     Icon(
                       Icons.history_rounded,
-                      size: 20,
+                      size: ScreenSize.screenWidth >= 1000 ? 22 : (ScreenSize.screenWidth >= 768 ? 20 : 20),
                       color: AppColors.textPrimary,
                     ),
                     SizedBox(width: ScreenSize.spacingSmall),
                     Text(
                       'Recent Searches',
                       style: TextStyle(
-                        fontSize: ScreenSize.headingSmall,
+                        fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.headingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingSmall : ScreenSize.headingSmall),
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
                       ),
@@ -210,7 +215,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: Text(
                     'Clear All',
                     style: TextStyle(
-                      fontSize: ScreenSize.textSmall,
+                      fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textSmall : ScreenSize.textSmall),
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600,
                     ),
@@ -242,14 +247,14 @@ class _SearchScreenState extends State<SearchScreen> {
             children: [
               Icon(
                 Icons.trending_up_rounded,
-                size: 20,
+                size: ScreenSize.screenWidth >= 1000 ? 22 : (ScreenSize.screenWidth >= 768 ? 20 : 20),
                 color: AppColors.primary,
               ),
               SizedBox(width: ScreenSize.spacingSmall),
               Text(
                 'Trending Searches',
                 style: TextStyle(
-                  fontSize: ScreenSize.headingSmall,
+                  fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.headingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingSmall : ScreenSize.headingSmall),
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
                 ),
@@ -280,7 +285,7 @@ class _SearchScreenState extends State<SearchScreen> {
           Text(
             'Browse Categories',
             style: TextStyle(
-              fontSize: ScreenSize.headingSmall,
+              fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.headingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingSmall : ScreenSize.headingSmall),
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
             ),
@@ -303,32 +308,39 @@ class _SearchScreenState extends State<SearchScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(25),
+        borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 26 : (ScreenSize.screenWidth >= 768 ? 24 : 25)),
         child: Container(
           padding: EdgeInsets.symmetric(
-            horizontal: ScreenSize.spacingMedium,
-            vertical: ScreenSize.spacingSmall + 2,
+            horizontal: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingMedium),
+            vertical: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingSmall + 4 : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingSmall + 3 : ScreenSize.spacingSmall + 2),
           ),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 26 : (ScreenSize.screenWidth >= 768 ? 24 : 25)),
             border: isPopular
                 ? Border.all(color: AppColors.primary.withOpacity(0.3), width: 1)
                 : null,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                size: 16,
+                size: ScreenSize.screenWidth >= 1000 ? 18 : (ScreenSize.screenWidth >= 768 ? 17 : 16),
                 color: isPopular ? AppColors.primary : AppColors.textSecondary,
               ),
               SizedBox(width: ScreenSize.spacingExtraSmall),
               Text(
                 text,
                 style: TextStyle(
-                  fontSize: ScreenSize.textSmall,
+                  fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textSmall : ScreenSize.textSmall),
                   color: isPopular ? AppColors.primary : AppColors.textPrimary,
                   fontWeight: isPopular ? FontWeight.w600 : FontWeight.normal,
                 ),
@@ -344,12 +356,12 @@ class _SearchScreenState extends State<SearchScreen> {
     return Obx(() {
       if (_controller.categories.isEmpty) {
         return Container(
-          padding: EdgeInsets.all(ScreenSize.spacingLarge),
+          padding: EdgeInsets.all(ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge)),
           child: Center(
             child: Text(
               'No categories available',
               style: TextStyle(
-                fontSize: ScreenSize.textMedium,
+                fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.textMedium : ScreenSize.textMedium),
                 color: AppColors.textSecondary,
               ),
             ),
@@ -357,14 +369,37 @@ class _SearchScreenState extends State<SearchScreen> {
         );
       }
       
+      // Responsive grid columns
+      int crossAxisCount;
+      double childAspectRatio;
+      double crossAxisSpacing;
+      double mainAxisSpacing;
+      
+      if (ScreenSize.screenWidth >= 1000) {
+        crossAxisCount = 6;
+        childAspectRatio = 1.0;
+        crossAxisSpacing = 16;
+        mainAxisSpacing = 16;
+      } else if (ScreenSize.screenWidth >= 768) {
+        crossAxisCount = 4;
+        childAspectRatio = 1.05;
+        crossAxisSpacing = 14;
+        mainAxisSpacing = 14;
+      } else {
+        crossAxisCount = 3;
+        childAspectRatio = 1.1;
+        crossAxisSpacing = 12;
+        mainAxisSpacing = 12;
+      }
+      
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.1,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: crossAxisSpacing,
+          mainAxisSpacing: mainAxisSpacing,
+          childAspectRatio: childAspectRatio,
         ),
         itemCount: _controller.categories.length,
         itemBuilder: (context, index) {
@@ -384,29 +419,36 @@ class _SearchScreenState extends State<SearchScreen> {
                   },
                 );
               },
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 18 : (ScreenSize.screenWidth >= 768 ? 17 : 16)),
               child: Container(
                 decoration: BoxDecoration(
                   color: (category['color'] as Color).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 18 : (ScreenSize.screenWidth >= 768 ? 17 : 16)),
                   border: Border.all(
                     color: (category['color'] as Color).withOpacity(0.3),
                     width: 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       category['icon'] as IconData,
-                      size: 32,
+                      size: ScreenSize.screenWidth >= 1000 ? 36 : (ScreenSize.screenWidth >= 768 ? 34 : 32),
                       color: category['color'] as Color,
                     ),
                     SizedBox(height: ScreenSize.spacingSmall),
                     Text(
                       category['name'] as String,
                       style: TextStyle(
-                        fontSize: ScreenSize.textSmall,
+                        fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textSmall : (ScreenSize.screenWidth >= 768 ? ScreenSize.textSmall : ScreenSize.textSmall),
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
@@ -427,27 +469,34 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildEmptyState() {
     return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.all(ScreenSize.paddingLarge),
+        padding: EdgeInsets.all(ScreenSize.screenWidth >= 1000 ? ScreenSize.paddingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.paddingMedium : ScreenSize.paddingLarge)),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(ScreenSize.screenWidth >= 1000 ? 28 : (ScreenSize.screenWidth >= 768 ? 26 : 24)),
               decoration: BoxDecoration(
                 color: AppColors.backgroundGrey,
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Icon(
                 Icons.search_off_rounded,
-                size: 64,
+                size: ScreenSize.screenWidth >= 1000 ? 72 : (ScreenSize.screenWidth >= 768 ? 68 : 64),
                 color: AppColors.textTertiary,
               ),
             ),
-            SizedBox(height: ScreenSize.spacingLarge),
+            SizedBox(height: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge)),
             Text(
               'No Results Found',
               style: TextStyle(
-                fontSize: ScreenSize.headingLarge,
+                fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.headingExtraLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.headingLarge : ScreenSize.headingLarge),
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
               ),
@@ -456,28 +505,28 @@ class _SearchScreenState extends State<SearchScreen> {
             Text(
               'We couldn\'t find any products matching your search',
               style: TextStyle(
-                fontSize: ScreenSize.textMedium,
+                fontSize: ScreenSize.screenWidth >= 1000 ? ScreenSize.textMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.textMedium : ScreenSize.textMedium),
                 color: AppColors.textSecondary,
               ),
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: ScreenSize.spacingLarge),
+            SizedBox(height: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge)),
             ElevatedButton.icon(
               onPressed: () {
                 _searchController.clear();
                 _controller.clearSearch();
               },
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Try Again'),
+              icon: Icon(Icons.refresh_rounded, size: ScreenSize.screenWidth >= 1000 ? 22 : 20),
+              label: Text('Try Again'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.textWhite,
                 padding: EdgeInsets.symmetric(
-                  horizontal: ScreenSize.spacingLarge,
-                  vertical: ScreenSize.spacingMedium,
+                  horizontal: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingLarge : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingLarge),
+                  vertical: ScreenSize.screenWidth >= 1000 ? ScreenSize.spacingMedium : (ScreenSize.screenWidth >= 768 ? ScreenSize.spacingMedium : ScreenSize.spacingMedium),
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(25),
+                  borderRadius: BorderRadius.circular(ScreenSize.screenWidth >= 1000 ? 26 : (ScreenSize.screenWidth >= 768 ? 24 : 25)),
                 ),
               ),
             ),
@@ -620,11 +669,21 @@ class _SearchScreenState extends State<SearchScreen> {
     final salePrice = product['sale_price'];
     final displayPrice = salePrice ?? regularPrice;
     final hasDiscount = salePrice != null && regularPrice > salePrice;
+    final isDigital = product['is_digital'] == true || product['is_digital'] == 1;
+    final mediaType = product['media_type']?.toString().toLowerCase();
+    final isVideo = isDigital && mediaType == 'video';
+    final isAudio = isDigital && mediaType == 'audio';
+    
+    // Debug print to check data
+    print('SearchScreen Product Card - Product ID: ${product['id']}');
+    print('SearchScreen Product Card - is_digital: ${product['is_digital']} (type: ${product['is_digital'].runtimeType})');
+    print('SearchScreen Product Card - media_type: ${product['media_type']} (type: ${product['media_type'].runtimeType})');
+    print('SearchScreen Product Card - isDigital: $isDigital, isVideo: $isVideo, isAudio: $isAudio');
     
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _controller.navigateToProductDetails(product['id']),
+        onTap: () => _controller.navigateToProductDetails(product['id'], preview: product),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           decoration: BoxDecoration(
@@ -644,7 +703,11 @@ class _SearchScreenState extends State<SearchScreen> {
                       borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(16),
                       ),
-                      child: _buildProductImage(product),
+                      child: isVideo
+                          ? _buildVideoThumbnail(product)
+                          : isAudio
+                              ? _buildAudioThumbnail(product)
+                              : _buildProductImage(product),
                     ),
                     // Favorite button
                     Positioned(
@@ -715,17 +778,17 @@ class _SearchScreenState extends State<SearchScreen> {
               Expanded(
                 flex: 2,
                 child: Padding(
-                  padding: EdgeInsets.all(ScreenSize.spacingSmall),
+                  padding: EdgeInsets.symmetric(horizontal: ScreenSize.spacingSmall, vertical: 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
                       // Category
                       if (product['category'] != null && product['category']['name'] != null)
                         Text(
                           product['category']['name'],
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 8,
                             color: AppColors.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
@@ -737,10 +800,10 @@ class _SearchScreenState extends State<SearchScreen> {
                       Text(
                         product['name'] ?? '',
                         style: TextStyle(
-                          fontSize: ScreenSize.textSmall,
+                          fontSize: ScreenSize.textExtraSmall,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
-                          height: 1.2,
+                          height: 1.1,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -752,14 +815,14 @@ class _SearchScreenState extends State<SearchScreen> {
                         children: [
                           Icon(
                             Icons.star_rounded,
-                            size: 12,
+                            size: 10,
                             color: AppColors.accent,
                           ),
                           SizedBox(width: 2),
                           Text(
                             '${product['rating'] ?? 0.0}',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 8,
                               color: AppColors.textSecondary,
                               fontWeight: FontWeight.w600,
                             ),
@@ -768,7 +831,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           Text(
                             '(${product['review_count'] ?? 0})',
                             style: TextStyle(
-                              fontSize: 9,
+                              fontSize: 7,
                               color: AppColors.textTertiary,
                             ),
                           ),
@@ -783,7 +846,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           Text(
                             '\$${displayPrice.toStringAsFixed(2)}',
                             style: TextStyle(
-                              fontSize: ScreenSize.textSmall,
+                              fontSize: ScreenSize.textExtraSmall,
                               fontWeight: FontWeight.bold,
                               color: AppColors.primary,
                             ),
@@ -793,7 +856,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             Text(
                               '\$${regularPrice.toStringAsFixed(2)}',
                               style: TextStyle(
-                                fontSize: 9,
+                                fontSize: 7,
                                 color: AppColors.textTertiary,
                                 decoration: TextDecoration.lineThrough,
                               ),
@@ -856,6 +919,145 @@ class _SearchScreenState extends State<SearchScreen> {
         Icons.image_rounded,
         color: AppColors.textTertiary,
         size: 40,
+      ),
+    );
+  }
+
+  /// Build video thumbnail for video products
+  Widget _buildVideoThumbnail(Map<String, dynamic> product) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Video placeholder with play icon
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            child: Icon(
+              Icons.play_circle_outline,
+              size: 32,
+              color: Colors.white.withOpacity(0.7),
+            ),
+          ),
+          // Play button overlay
+          Positioned(
+            child: Container(
+              padding: EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.play_arrow,
+                size: 16,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          // Video label
+          Positioned(
+            bottom: 8,
+            left: 8,
+            right: 8,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.videocam, size: 10, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    'Video',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build audio thumbnail for audio products
+  Widget _buildAudioThumbnail(Map<String, dynamic> product) {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.blue.withOpacity(0.8),
+            Colors.blue.withOpacity(0.6),
+          ],
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Audio icon
+          Icon(
+            Icons.audiotrack,
+            size: 32,
+            color: Colors.white.withOpacity(0.8),
+          ),
+          // Play button overlay
+          Positioned(
+            child: Container(
+              padding: EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.play_arrow,
+                size: 16,
+                color: Colors.blue,
+              ),
+            ),
+          ),
+          // Audio label
+          Positioned(
+            bottom: 8,
+            left: 8,
+            right: 8,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.audiotrack, size: 10, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text(
+                    'Audio',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

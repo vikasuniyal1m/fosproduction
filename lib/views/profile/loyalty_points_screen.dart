@@ -4,6 +4,7 @@ import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
 import '../../controllers/loyalty_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 
 /// Loyalty Points Screen
 /// Shows user's loyalty points, history, and redemption options
@@ -28,23 +29,27 @@ class LoyaltyPointsScreen extends StatelessWidget {
         centerTitle: true,
         toolbarHeight: ScreenSize.buttonHeightLarge,
       ),
-      body: Obx(() => controller.isLoading.value
+      body: Obx(() => SilentLoading.blockUi(
+            isLoading: controller.isLoading.value,
+            hasContent: controller.history.isNotEmpty ||
+                controller.currentPoints.value > 0,
+          )
           ? const LoadingWidget()
           : RefreshIndicator(
               onRefresh: controller.refresh,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.all(ScreenSize.spacingLarge),
+                padding: EdgeInsets.all(ScreenSize.spacingMedium),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Points Card
                     _buildPointsCard(controller),
-                    SizedBox(height: ScreenSize.spacingLarge),
+                    SizedBox(height: ScreenSize.spacingMedium),
                     
                     // Statistics
                     _buildStatistics(controller),
-                    SizedBox(height: ScreenSize.spacingLarge),
+                    SizedBox(height: ScreenSize.spacingMedium),
                     
                     // History Section
                     _buildHistorySection(controller),
@@ -58,7 +63,7 @@ class LoyaltyPointsScreen extends StatelessWidget {
   Widget _buildPointsCard(LoyaltyController controller) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(ScreenSize.spacingXLarge),
+      padding: EdgeInsets.all(ScreenSize.spacingLarge),
       decoration: BoxDecoration(
         gradient: AppColors.primaryGradient,
         borderRadius: BorderRadius.circular(ScreenSize.borderRadiusLarge),

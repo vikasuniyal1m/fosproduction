@@ -1,29 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../utils/screen_size.dart';
 import '../../utils/app_colors.dart';
+import '../../utils/digital_product_type.dart';
 import '../../controllers/wishlist_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/product_grid_card.dart';
+import '../../utils/silent_loading.dart';
 
 /// Wishlist Screen
-/// Shows user's saved wishlist items
 class WishlistScreen extends StatelessWidget {
   const WishlistScreen({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
     final controller = Get.put(WishlistController());
-    
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
           'Wishlist',
-          style: TextStyle(
-            fontSize: ScreenSize.headingMedium,
-          ),
+          style: TextStyle(fontSize: ScreenSize.headingSmall),
         ),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.textWhite,
@@ -31,55 +30,37 @@ class WishlistScreen extends StatelessWidget {
         centerTitle: true,
         toolbarHeight: ScreenSize.buttonHeightLarge,
         leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            size: ScreenSize.iconMedium,
-          ),
+          icon: Icon(Icons.arrow_back, size: ScreenSize.iconMedium),
           onPressed: () => Get.back(),
         ),
         actions: [
           Obx(() => controller.wishlistItems.isNotEmpty
               ? IconButton(
-                  icon: Icon(
-                    Icons.delete_outline,
-                    size: ScreenSize.iconMedium,
-                  ),
+                  icon: Icon(Icons.delete_outline, size: ScreenSize.iconMedium),
                   onPressed: () {
                     Get.dialog(
                       AlertDialog(
                         title: Text(
                           'Clear Wishlist',
-                          style: TextStyle(
-                            fontSize: ScreenSize.headingMedium,
-                          ),
+                          style: TextStyle(fontSize: ScreenSize.headingMedium),
                         ),
                         content: Text(
                           'Are you sure you want to clear all items from wishlist?',
-                          style: TextStyle(
-                            fontSize: ScreenSize.textLarge,
-                          ),
+                          style: TextStyle(fontSize: ScreenSize.textLarge),
                         ),
                         actions: [
                           TextButton(
                             onPressed: () => Get.back(),
-                            child: Text(
-                              'Cancel',
-                              style: TextStyle(
-                                fontSize: ScreenSize.textLarge,
-                              ),
-                            ),
+                            child: Text('Cancel',
+                                style: TextStyle(fontSize: ScreenSize.textLarge)),
                           ),
                           TextButton(
                             onPressed: () {
                               Get.back();
                               controller.clearWishlist();
                             },
-                            child: Text(
-                              'Clear',
-                              style: TextStyle(
-                                fontSize: ScreenSize.textLarge,
-                              ),
-                            ),
+                            child: Text('Clear',
+                                style: TextStyle(fontSize: ScreenSize.textLarge)),
                           ),
                         ],
                       ),
@@ -89,14 +70,17 @@ class WishlistScreen extends StatelessWidget {
               : const SizedBox.shrink()),
         ],
       ),
-      body: Obx(() => controller.isLoading.value
+      body: Obx(() => SilentLoading.blockUi(
+            isLoading: controller.isLoading.value,
+            hasContent: controller.wishlistItems.isNotEmpty,
+          )
           ? const LoadingWidget()
           : controller.wishlistItems.isEmpty
               ? _buildEmptyState()
               : _buildWishlistItems(controller)),
     );
   }
-  
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -128,7 +112,7 @@ class WishlistScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildWishlistItems(WishlistController controller) {
     return ListView.builder(
       padding: EdgeInsets.all(ScreenSize.paddingMedium),
@@ -139,200 +123,138 @@ class WishlistScreen extends StatelessWidget {
       },
     );
   }
-  
-  Widget _buildWishlistItem(Map<String, dynamic> item, WishlistController controller) {
-    return Container(
-      margin: EdgeInsets.only(bottom: ScreenSize.spacingMedium),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
-        boxShadow: AppColors.cardShadow,
-      ),
-      child: Row(
-        children: [
-          // Product Image
-          GestureDetector(
-            onTap: () => controller.navigateToProductDetails(item['id']),
-            child: ClipRRect(
+
+  bool _showAddToCart(Map<String, dynamic> item) {
+    if (DigitalProductType.isDigitalNoCart(item)) return false;
+    if (DigitalProductType.isDigitalProduct(item)) return false;
+    return true;
+  }
+
+  Widget _buildWishlistItem(
+    Map<String, dynamic> item,
+    WishlistController controller,
+  ) {
+    final imageSize = ScreenSize.productCardHorizontalImageHeight;
+    final showCart = _showAddToCart(item);
+
+    return GestureDetector(
+      onTap: () => controller.navigateToProductDetails(item['id'], preview: item),
+      child: Container(
+        margin: EdgeInsets.only(bottom: ScreenSize.spacingSmall),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ScreenSize.tileBorderRadius),
+          boxShadow: AppColors.cardShadow,
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(ScreenSize.tileBorderRadius),
                 bottomLeft: Radius.circular(ScreenSize.tileBorderRadius),
               ),
-              child: CachedNetworkImage(
-                imageUrl: item['image'] ?? '',
-                width: ScreenSize.productCardHorizontalImageHeight,
-                height: ScreenSize.productCardHorizontalImageHeight,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(
-                  width: ScreenSize.productCardHorizontalImageHeight,
-                  height: ScreenSize.productCardHorizontalImageHeight,
-                  color: AppColors.backgroundGrey,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                    ),
-                  ),
-                ),
-                errorWidget: (context, url, error) => Container(
-                  width: ScreenSize.productCardHorizontalImageHeight,
-                  height: ScreenSize.productCardHorizontalImageHeight,
-                  color: AppColors.backgroundGrey,
-                  child: Icon(
-                    Icons.image_not_supported,
-                    size: ScreenSize.iconLarge,
-                    color: AppColors.textTertiary,
-                  ),
+              child: SizedBox(
+                width: imageSize,
+                height: imageSize,
+                child: ProductCardImage(
+                  product: item,
+                  cacheKeyPrefix: 'wishlist',
                 ),
               ),
             ),
-          ),
-          
-          // Product Info
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(ScreenSize.paddingMedium),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => controller.navigateToProductDetails(item['id']),
-                    child: Text(
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(ScreenSize.spacingSmall),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       item['name'] ?? '',
                       style: TextStyle(
-                        fontSize: ScreenSize.textLarge,
+                        fontSize: ScreenSize.textSmall,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  
-                  // Rating
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.star,
-                        size: ScreenSize.iconSmall,
-                        color: AppColors.accent,
-                      ),
-                      SizedBox(width: ScreenSize.spacingExtraSmall),
-                      Text(
-                        '${item['rating'] ?? 0.0}',
-                        style: TextStyle(
-                          fontSize: ScreenSize.textSmall,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      SizedBox(width: ScreenSize.spacingSmall),
-                      Flexible(
-                        child: Text(
-                          '(${item['reviews'] ?? 0})',
-                          style: TextStyle(
-                            fontSize: ScreenSize.textSmall,
-                            color: AppColors.textTertiary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  
-                  // Price
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '\$${item['price']?.toStringAsFixed(2) ?? '0.00'}',
-                          style: TextStyle(
-                            fontSize: ScreenSize.textLarge,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (item['originalPrice'] != null &&
-                          item['originalPrice'] > item['price'])
-                        Flexible(
-                          child: Padding(
-                            padding: EdgeInsets.only(left: ScreenSize.spacingSmall),
-                            child: Text(
-                              '\$${item['originalPrice']?.toStringAsFixed(2) ?? '0.00'}',
-                              style: TextStyle(
-                                fontSize: ScreenSize.textSmall,
-                                color: AppColors.textTertiary,
-                                decoration: TextDecoration.lineThrough,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  SizedBox(height: ScreenSize.spacingSmall),
-                  
-                  // Stock Status
-                  if (item['inStock'] == false)
+                    const SizedBox(height: 4),
                     Text(
-                      'Out of Stock',
+                      '\$${(item['price'] as num? ?? 0).toStringAsFixed(2)}',
                       style: TextStyle(
-                        fontSize: ScreenSize.textSmall,
-                        color: AppColors.error,
-                        fontWeight: FontWeight.w600,
+                        fontSize: ScreenSize.textMedium,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
                       ),
                     ),
-                  
-                  // Actions
-                  SizedBox(height: ScreenSize.spacingMedium),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: item['inStock'] == true
-                              ? () => controller.addToCart(item['id'])
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: BorderSide(color: AppColors.primary),
-                            padding: EdgeInsets.symmetric(
-                              vertical: ScreenSize.spacingSmall,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                ScreenSize.buttonBorderRadius,
+                    if (!showCart) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _digitalLabel(item),
+                        style: TextStyle(
+                          fontSize: ScreenSize.textExtraSmall,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (showCart)
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => controller.addToCart(item['id']),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.textWhite,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                              child: Text(
+                                'Add to Cart',
+                                style:
+                                    TextStyle(fontSize: ScreenSize.textSmall),
                               ),
                             ),
                           ),
-                          child: Text(
-                            'Add to Cart',
-                            style: TextStyle(
-                              fontSize: ScreenSize.textMedium,
-                            ),
+                        if (showCart) const SizedBox(width: 8),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: AppColors.error,
+                            size: 18,
                           ),
+                          onPressed: () =>
+                              controller.removeFromWishlist(item['id']),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
-                      ),
-                      SizedBox(width: ScreenSize.spacingSmall),
-                      IconButton(
-                        icon: Icon(
-                          Icons.delete_outline,
-                          size: ScreenSize.iconMedium,
-                          color: AppColors.error,
-                        ),
-                        onPressed: () => controller.removeFromWishlist(item['id']),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
 
+  String _digitalLabel(Map<String, dynamic> item) {
+    if (DigitalProductType.isStickerPack(item)) {
+      return 'Sticker pack — tap to buy';
+    }
+    if (DigitalProductType.isVideo(item)) return 'Video — tap to buy';
+    if (DigitalProductType.isAudio(item)) return 'Audio — tap to buy';
+    if (DigitalProductType.isDigitalProduct(item)) {
+      return 'Digital — tap to buy';
+    }
+    return 'Tap to view';
+  }
+}

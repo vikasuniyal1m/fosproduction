@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -16,7 +17,7 @@ class StripeService {
   /// Call this in main.dart or app initialization
   static Future<void> initialize(String publishableKey) async {
     Stripe.publishableKey = publishableKey;
-    Stripe.merchantIdentifier = 'merchant.com.yourapp'; // Optional, for Apple Pay
+    Stripe.merchantIdentifier = 'merchant.com.test'; // Test merchant ID for development
     await Stripe.instance.applySettings();
   }
   
@@ -215,61 +216,157 @@ class StripeService {
     BillingDetails? billingDetails,
   }) async {
     try {
+      log('[StripeService] ========== INIT PAYMENT SHEET ==========');
+      debugPrint('[StripeService] Initializing payment sheet with clientSecret: ${clientSecret.substring(0, 10)}...');
+      log('[StripeService] Client Secret: ${clientSecret.substring(0, 20)}...');
+      debugPrint('[StripeService] Customer ID: $customerId');
+      log('[StripeService] Customer ID: $customerId');
+      debugPrint('[StripeService] Customer Ephemeral Key: ${customerEphemeralKeySecret != null ? "Present" : "Null"}');
+      log('[StripeService] Ephemeral Key: ${customerEphemeralKeySecret != null ? "Present (length: ${customerEphemeralKeySecret.length})" : "Null"}');
+      log('[StripeService] Merchant Display Name: ${merchantDisplayName ?? "FOS Productions"}');
+      log('[StripeService] Customer Email: ${customerEmail ?? "Not provided"}');
+      
       // Prepare billing details if customer email is provided and billingDetails are not already set
       BillingDetails? finalBillingDetails = billingDetails;
       if (customerEmail != null && customerEmail.isNotEmpty && finalBillingDetails == null) {
         finalBillingDetails = BillingDetails(
           email: customerEmail,
         );
+        debugPrint('[StripeService] Using customer email: $customerEmail');
       }
 
+      debugPrint('[StripeService] About to call Stripe.instance.initPaymentSheet...');
+      log('[StripeService] Calling Stripe.instance.initPaymentSheet...');
+      
+      // Set merchant identifier for Apple Pay
+      Stripe.merchantIdentifier = 'merchant.com.test';
+      await Stripe.instance.applySettings();
+      
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: merchantDisplayName ?? 'Your Store',
-          customerId: customerId,
-          customerEphemeralKeySecret: customerEphemeralKeySecret,
-          billingDetails: finalBillingDetails,
-          applePay: const PaymentSheetApplePay(
-            merchantCountryCode: 'IN',
-          ),
-          googlePay: const PaymentSheetGooglePay(
-            merchantCountryCode: 'IN',
-            testEnv: true, // Set to false for production
-          ),
+          merchantDisplayName: merchantDisplayName ?? 'FOS Productions',
+          customerId: (customerId?.isNotEmpty ?? false) ? customerId : null,
+          customerEphemeralKeySecret: (customerEphemeralKeySecret?.isNotEmpty ?? false) ? customerEphemeralKeySecret : null,
+          allowsDelayedPaymentMethods: true,
+          returnURL: 'com.fruitsofspirit.ecommerce://stripe-redirect',
           style: ThemeMode.system,
+          // Only enable Google Pay on Android to prevent iOS conflicts
+          googlePay: GetPlatform.isIOS ? null : const PaymentSheetGooglePay(
+            merchantCountryCode: 'US',
+            testEnv: true,
+            currencyCode: 'USD',
+          ),
+          appearance: const PaymentSheetAppearance(
+            colors: PaymentSheetAppearanceColors(
+              primary: AppColors.primary,
+            ),
+          ),
+          billingDetails: finalBillingDetails,
         ),
       );
+      
+      log('[StripeService] SUCCESS: Payment sheet initialized successfully');
+      debugPrint('[StripeService] Payment sheet initialization completed successfully.');
     } catch (e) {
-      log('Error initializing payment sheet: $e');
+      log('[StripeService] ERROR: Failed to initialize payment sheet');
+      log('[StripeService] Error details: $e');
+      debugPrint('[StripeService] Error initializing payment sheet: $e');
       rethrow;
     }
   }
 
   /// Present Payment Sheet
   /// Shows Stripe's PaymentSheet with all available payment options
-  /// Returns the payment result
+  /// Returns payment result
   Future<Map<String, dynamic>> presentPaymentSheet() async {
     try {
-      // Present payment sheet - this will handle the entire payment flow
-      // including card input, Apple Pay, Google Pay, etc.
-      await Stripe.instance.presentPaymentSheet();
+      log('[StripeService] ========== PRESENT PAYMENT SHEET ==========');
+      debugPrint('[StripeService] Presenting payment sheet via Stripe SDK...');
+      
+      // Check if payment sheet is properly initialized
+      try {
+        Stripe.instance;
+        debugPrint('[StripeService] Stripe instance available');
+      } catch (e) {
+        debugPrint('[StripeService] Error accessing Stripe instance: $e');
+        rethrow;
+      }
+      
+      // On iOS, wait for current frame to complete before presenting
+      if (GetPlatform.isIOS) {
+        debugPrint('[StripeService] iOS detected - waiting for view hierarchy...');
+        // Wait for the current frame to complete and view hierarchy to be ready
+        await WidgetsBinding.instance.endOfFrame;
+        await Future.delayed(const Duration(milliseconds: 500));
+        debugPrint('[StripeService] iOS wait completed, attempting to present...');
+      }
+
+      debugPrint('[StripeService] About to call Stripe.instance.presentPaymentSheet()...');
+      log('[StripeService] Calling Stripe.instance.presentPaymentSheet()...');
+
+      await Stripe.instance.presentPaymentSheet().timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          log('[StripeService] TIMEOUT: Payment sheet presentation timed out after 60 seconds');
+          debugPrint('[StripeService] Payment sheet presentation timed out');
+          throw TimeoutException('Payment sheet timed out', const Duration(seconds: 60));
+        },
+      );
+
+      log('[StripeService] SUCCESS: Payment sheet presented and completed successfully');
+      debugPrint('[StripeService] Payment sheet presented and completed successfully.');
 
       // If we reach here, payment was successful
       // The payment intent status is updated automatically by Stripe
       return {
         'success': true,
-        'status': 'succeeded',
+        'message': 'Payment completed successfully',
+        'payment_intent_id': '', // Will be populated by the calling controller
       };
+      
     } on StripeException catch (e) {
-      if (e.error.code == FailureCode.Canceled) {
-        throw Exception('Payment was cancelled');
-      } else {
-        throw Exception('Payment failed: ${e.error.message ?? e.error.code}');
+      log('[StripeService] STRIPE EXCEPTION: ${e.error.localizedMessage}');
+      log('[StripeService] StripeException error code: ${e.error.code}');
+      log('[StripeService] StripeException localizedMessage: ${e.error.localizedMessage}');
+      debugPrint('[StripeService] StripeException caught: ${e.error.localizedMessage}');
+      debugPrint('[StripeService] StripeException error code: ${e.error.code}');
+      debugPrint('[StripeService] StripeException localizedMessage: ${e.error.localizedMessage}');
+      
+      // Handle specific Stripe errors
+      String errorMessage = e.error.localizedMessage ?? 'Payment failed';
+      
+      if (e.error.code.toString().toLowerCase().contains('cancelled')) {
+        return {
+          'success': false,
+          'message': 'Payment cancelled',
+          'error_code': 'CANCELLED',
+        };
       }
+      
+      return {
+        'success': false,
+        'message': errorMessage,
+        'error_code': e.error.code.toString(),
+      };
+      
+    } on TimeoutException catch (e) {
+      log('[StripeService] TIMEOUT EXCEPTION: ${e.message}');
+      debugPrint('[StripeService] TimeoutException caught: ${e.message}');
+      return {
+        'success': false,
+        'message': 'Payment timed out. Please try again.',
+        'error_code': 'TIMEOUT',
+      };
+      
     } catch (e) {
-      throw Exception('Payment sheet error: $e');
+      log('[StripeService] GENERIC ERROR: $e');
+      debugPrint('[StripeService] Generic error caught in presentPaymentSheet: $e');
+      return {
+        'success': false,
+        'message': 'Payment failed: ${e.toString()}',
+        'error_code': 'UNKNOWN',
+      };
     }
   }
 }
-

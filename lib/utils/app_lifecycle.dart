@@ -5,6 +5,12 @@ import '../controllers/cart_controller.dart';
 import '../controllers/wishlist_controller.dart';
 import '../controllers/checkout_controller.dart';
 import '../controllers/search_controller.dart' as search_ctrl;
+import '../controllers/home_controller.dart';
+import '../controllers/product_controller.dart';
+import '../controllers/profile_controller.dart';
+import '../controllers/auth_controller.dart';
+import '../services/notification_service.dart';
+import '../services/cart_sync_service.dart';
 import 'cache_manager.dart';
 import '../routes/app_routes.dart';
 
@@ -56,6 +62,9 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   /// that was persisted before the app was killed by the OS (process death).
   Future<void> _restoreAppState() async {
     try {
+      if (!Hive.isBoxOpen('appState')) {
+        await Hive.openBox('appState');
+      }
       final box = Hive.box('appState');
       
       // TEMPORARILY DISABLED: State restoration to prevent old UI from showing
@@ -113,25 +122,46 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
       final lastRoute = box.get('last_route') as String?;
       
       if (lastRoute != null && lastRoute.isNotEmpty) {
-        // Don't restore to splash or login if user is logged in
+        // Don't restore to splash or onboarding
         if (lastRoute == AppRoutes.splash || lastRoute == AppRoutes.onboarding) {
           return;
         }
-        
-        // Don't restore to login if user is already logged in
-        if (lastRoute == AppRoutes.login && CacheManager.isLoggedIn()) {
-          // Restore to home instead
+
+        // Never restore to payment or order-confirmation (no context after process death)
+        final isSensitive = _sensitiveRoutes.any((r) => lastRoute.startsWith(r.split('?').first));
+        if (isSensitive) {
           Future.delayed(const Duration(milliseconds: 300), () {
-            Get.offAllNamed(AppRoutes.home);
+            try {
+              Get.offAllNamed(AppRoutes.home);
+            } catch (e) {
+              debugPrint('[AppLifecycle] Fallback to home failed: $e');
+            }
           });
           return;
         }
-        
+
+        // Don't restore to login if user is already logged in
+        if (lastRoute == AppRoutes.login && CacheManager.isLoggedIn()) {
+          Future.delayed(const Duration(milliseconds: 300), () {
+            try {
+              Get.offAllNamed(AppRoutes.home);
+            } catch (e) {
+              debugPrint('[AppLifecycle] Fallback to home failed: $e');
+            }
+          });
+          return;
+        }
+
         debugPrint('[AppLifecycle] Restoring navigation to: $lastRoute');
-        
-        // Navigate to last route after ensuring app is ready
+
+        // Navigate to last route after ensuring app is ready (wrap to avoid crash on invalid route)
         Future.delayed(const Duration(milliseconds: 500), () {
-          Get.offAllNamed(lastRoute);
+          try {
+            Get.offAllNamed(lastRoute);
+          } catch (e) {
+            debugPrint('[AppLifecycle] Navigation restore failed, falling back to home: $e');
+            Get.offAllNamed(AppRoutes.home);
+          }
         });
       }
     } catch (e) {
@@ -281,6 +311,9 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
       _handleBackgroundDuration(duration);
     }
     
+    // Restart background processes
+    _startBackgroundProcesses();
+    
     // Refresh data if needed
     _refreshAppData();
   }
@@ -297,6 +330,9 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
     isAppPaused.value = true;
     _lastPausedTime = DateTime.now();
     
+    // Stop background processes to save resources
+    _stopBackgroundProcesses();
+    
     // Save important data
     _saveAppState();
   }
@@ -305,6 +341,13 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   void _onAppDetached() {
     isAppInForeground.value = false;
     isAppInBackground.value = true;
+    
+    // Stop all background processes
+    _stopBackgroundProcesses();
+    
+    // Clear all controllers to prevent memory leaks
+    _cleanupControllers();
+    
     _saveAppState();
   }
   
@@ -312,6 +355,10 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   void _onAppHidden() {
     isAppInForeground.value = false;
     isAppInBackground.value = true;
+    
+    // Stop background processes
+    _stopBackgroundProcesses();
+    
     _saveAppState();
   }
   
@@ -325,8 +372,39 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   
   /// Refresh app data when coming back to foreground
   void _refreshAppData() {
-    // Override this in your controllers to refresh data
-    // Example: CartController.instance.refreshCart();
+    debugPrint('[AppLifecycle] Refreshing app data after resume...');
+    
+    // Refresh cart sync service
+    try {
+      if (Get.isRegistered<CartSyncService>()) {
+        CartSyncService.to.forceSync();
+        debugPrint('[AppLifecycle] Cart sync service refreshed');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing cart sync: $e');
+    }
+    
+    // Refresh cart controller directly
+    try {
+      if (Get.isRegistered<CartController>()) {
+        final cartController = Get.find<CartController>();
+        cartController.forceRefreshCart();
+        debugPrint('[AppLifecycle] Cart controller refreshed');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing cart controller: $e');
+    }
+    
+    // Refresh notifications
+    try {
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.pollNow();
+        debugPrint('[AppLifecycle] Notifications polled immediately');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error refreshing notifications: $e');
+    }
   }
   
   /// Save app state before going to background
@@ -368,14 +446,24 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
     });
   }
   
+  /// Routes we should never persist or restore (payment/confirmation flows).
+  /// Prevents restoring to Stripe or order-confirmation after process death (no context).
+  static const List<String> _sensitiveRoutes = [
+    AppRoutes.stripePayment,
+    AppRoutes.orderConfirmation,
+  ];
+
   /// Save navigation state
   Future<void> _saveNavigationState() async {
     try {
       final box = Hive.box('appState');
       final currentRoute = Get.currentRoute;
-      
-      // Don't save splash or onboarding routes
-      if (currentRoute != AppRoutes.splash && currentRoute != AppRoutes.onboarding) {
+
+      // Don't save splash, onboarding, or payment/confirmation routes
+      final isSensitive = _sensitiveRoutes.any((r) => currentRoute.startsWith(r.split('?').first));
+      if (currentRoute != AppRoutes.splash &&
+          currentRoute != AppRoutes.onboarding &&
+          !isSensitive) {
         await box.put('last_route', currentRoute);
         debugPrint('[AppLifecycle] Saved navigation state: $currentRoute');
       }
@@ -476,6 +564,72 @@ class AppLifecycleManager extends GetxController with WidgetsBindingObserver {
   
   /// Check if app is currently in background
   bool get isBackground => isAppInBackground.value;
+  
+  /// Stop background processes when app goes to background
+  void _stopBackgroundProcesses() {
+    try {
+      if (Get.isRegistered<NotificationService>()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.setAppForeground(false);
+        debugPrint('[AppLifecycle] Notification polling slowed (background)');
+      }
+      
+      debugPrint('[AppLifecycle] Background mode updated');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error stopping background processes: $e');
+    }
+  }
+  
+  /// Start background processes when app comes to foreground
+  void _startBackgroundProcesses() {
+    try {
+      if (Get.isRegistered<NotificationService>() && CacheManager.isLoggedIn()) {
+        final notificationService = Get.find<NotificationService>();
+        notificationService.setAppForeground(true);
+        debugPrint('[AppLifecycle] Notification polling fast (foreground)');
+      }
+      
+      debugPrint('[AppLifecycle] Foreground mode updated');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error starting background processes: $e');
+    }
+  }
+  
+  /// Cleanup controllers to prevent memory leaks
+  void _cleanupControllers() {
+    try {
+      // Clean up controllers by type checking
+      _cleanupController<CartController>('CartController');
+      _cleanupController<WishlistController>('WishlistController');
+      _cleanupController<CheckoutController>('CheckoutController');
+      _cleanupController<search_ctrl.SearchController>('SearchController');
+      _cleanupController<HomeController>('HomeController');
+      _cleanupController<ProductController>('ProductController');
+      _cleanupController<ProfileController>('ProfileController');
+      _cleanupController<AuthController>('AuthController');
+      _cleanupController<NotificationService>('NotificationService');
+      
+      debugPrint('[AppLifecycle] Controller cleanup completed');
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error during controller cleanup: $e');
+    }
+  }
+  
+  /// Helper method to cleanup a specific controller type
+  void _cleanupController<T>(String controllerName) {
+    try {
+      if (Get.isRegistered<T>()) {
+        final controller = Get.find<T>();
+        if (controller is GetxController) {
+          controller.onClose();
+        }
+        Get.delete<T>();
+        debugPrint('[AppLifecycle] Cleaned up: $controllerName');
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycle] Error cleaning up $controllerName: $e');
+    }
+  }
   
   /// Get time spent in background (if available)
   Duration? get backgroundDuration {

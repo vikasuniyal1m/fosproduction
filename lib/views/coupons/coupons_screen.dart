@@ -6,21 +6,23 @@ import '../../utils/app_colors.dart';
 import '../../controllers/coupon_controller.dart';
 import '../../controllers/cart_controller.dart';
 import '../../widgets/loading_widget.dart';
+import '../../utils/silent_loading.dart';
 import '../../routes/app_routes.dart';
 import '../../services/api_service.dart';
+import '../../utils/getx_registry.dart';
 
 /// Coupons Screen
 /// Displays all available coupons that can be used
 class CouponsScreen extends StatelessWidget {
   CouponsScreen({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     ScreenSize.init(context);
     final controller = Get.put(CouponController());
-    
+
     return Scaffold(
-      backgroundColor: AppColors.background, // Match home page theme
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
           'My Coupons',
@@ -51,12 +53,15 @@ class CouponsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Obx(() => controller.isLoading.value
+      body: Obx(() => SilentLoading.blockUi(
+            isLoading: controller.isLoading.value,
+            hasContent: controller.coupons.isNotEmpty,
+          )
           ? const LoadingWidget()
           : _buildCouponsList(controller)),
     );
   }
-  
+
   Widget _buildCouponsList(CouponController controller) {
     if (controller.coupons.isEmpty) {
       return Center(
@@ -89,264 +94,308 @@ class CouponsScreen extends StatelessWidget {
         ),
       );
     }
-    
+
     return RefreshIndicator(
       onRefresh: () => controller.refreshCoupons(),
-      child: ListView.builder(
-        padding: EdgeInsets.all(ScreenSize.paddingMedium),
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
         itemCount: controller.coupons.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final coupon = controller.coupons[index];
-          final isUsed = controller.isCouponUsed(coupon['code'] as String);
-          return _buildCouponCard(coupon, controller, isUsed);
+          return _buildCouponCard(coupon, controller);
         },
       ),
     );
   }
-  
+
   Widget _buildCouponCard(
     Map<String, dynamic> coupon,
     CouponController controller,
-    bool isUsed,
   ) {
-    // Handle both int and double values from JSON
-    final discountValue = coupon['discount'];
-    final discount = discountValue is int 
-        ? discountValue.toDouble() 
-        : (discountValue as double?) ?? 0.0;
-    final discountType = coupon['discount_type'] as String? ?? 'fixed'; // 'fixed' or 'percentage'
+    final cartController = GetXRegistry.cart();
+
+    return Obx(() {
+      final cartSubtotal = cartController.subtotal.value;
+      final cartHasItems = cartController.cartItems.isNotEmpty;
+      final isUsed =
+          controller.isCouponUsed(coupon['code']?.toString() ?? '');
+      final eligible = controller.isCouponEligible(
+        coupon,
+        cartSubtotal,
+        cartHasItems: cartHasItems,
+      );
+      final disabledReason = controller.couponDisabledReason(
+        coupon,
+        cartSubtotal,
+        cartHasItems: cartHasItems,
+      );
+
+      return _buildCouponCardBody(
+        coupon: coupon,
+        controller: controller,
+        isUsed: isUsed,
+        eligible: eligible,
+        disabledReason: disabledReason,
+        onTap: eligible
+            ? () => _handleCouponTap(coupon, controller, cartSubtotal)
+            : () => _handleDisabledCouponTap(
+                  coupon,
+                  cartSubtotal,
+                  cartHasItems,
+                  disabledReason,
+                ),
+      );
+    });
+  }
+
+  Widget _buildCouponCardBody({
+    required Map<String, dynamic> coupon,
+    required CouponController controller,
+    required bool isUsed,
+    required bool eligible,
+    required String disabledReason,
+    required VoidCallback onTap,
+  }) {
+    final rawDiscount = coupon['discount_value'] ?? coupon['value'] ?? coupon['discount'];
+    final discount = rawDiscount is int
+        ? rawDiscount.toDouble()
+        : (rawDiscount is double ? rawDiscount : double.tryParse(rawDiscount?.toString() ?? '0') ?? 0.0);
+    final discountType = coupon['discount_type'] ?? coupon['type'] as String? ?? 'fixed';
     final description = coupon['description'] as String? ?? '';
     final validUntil = coupon['valid_until'] as String?;
     final productImage = coupon['product_image'] as String? ?? coupon['image'] as String? ?? '';
     final productName = coupon['product_name'] as String? ?? description;
     final couponCode = coupon['code'] as String? ?? '';
-    
-    // Format discount text
+
     String discountText = '';
     if (discountType == 'percentage') {
       discountText = '${discount.toInt()}% OFF';
     } else {
-      discountText = '\$${discount.toStringAsFixed(0)}';
+      discountText = '\$${discount.toStringAsFixed(0)} OFF';
     }
-    
-    return Container(
-      margin: EdgeInsets.only(bottom: ScreenSize.spacingMedium),
-      child: _buildTicketShape(
-        child: Row(
-          children: [
-            // Left side - Product Image
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: AppColors.backgroundGrey,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  bottomLeft: Radius.circular(12),
-                ),
+
+    return GestureDetector(
+      onTap: isUsed ? null : onTap,
+      child: Opacity(
+        opacity: isUsed ? 0.5 : (eligible ? 1.0 : 0.55),
+        child: Container(
+          height: 110,
+          decoration: BoxDecoration(
+            color: AppColors.textWhite,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
-              child: productImage.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(ScreenSize.isLargeTablet ? 16 : (ScreenSize.isSmallTablet ? 14 : 12)),
-                        bottomLeft: Radius.circular(ScreenSize.isLargeTablet ? 16 : (ScreenSize.isSmallTablet ? 14 : 12)),
-                      ),
-                      child: CachedNetworkImage(
-                        imageUrl: productImage.startsWith('http') ? productImage : '${ApiService.imageBaseUrl}$productImage',
-                        fit: BoxFit.fitHeight,
-                        placeholder: (context, url) => Container(
-                          color: AppColors.backgroundGrey,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: AppColors.backgroundGrey,
-                          child: Icon(
-                            Icons.image_not_supported_rounded,
-                            size: ScreenSize.iconLarge,
-                            color: AppColors.textTertiary,
-                          ),
-                        ),
-                      ),
-                    )
-                  : Container(
-                      color: AppColors.backgroundGrey,
-                      child: Icon(
-                        Icons.shopping_bag_rounded,
-                        size: ScreenSize.iconLarge,
-                        color: AppColors.textTertiary,
-                      ),
+            ],
+          ),
+          child: ClipPath(
+            clipper: CouponClipper(),
+            child: Row(
+              children: [
+                // Left Part - Brand/Type
+                Container(
+                  width: 85,
+                  decoration: BoxDecoration(
+                    color: isUsed ? AppColors.textTertiary : AppColors.primary,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
                     ),
-            ),
-            
-            // Dashed Line Separator
-            CustomPaint(
-              size: Size(1, 100),
-              painter: DashedLinePainter(),
-            ),
-            
-            // Right side - Coupon Details
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.all(ScreenSize.spacingMedium),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Discount Offer (Bold)
-                    Text(
-                      discountText,
-                      style: TextStyle(
-                        fontSize: ScreenSize.headingMedium,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    SizedBox(height: ScreenSize.spacingSmall),
-                    
-                    // Coupon Code
-                    if (couponCode.isNotEmpty)
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ScreenSize.spacingSmall,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: AppColors.primary,
-                            width: 1,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.local_offer,
-                              size: 14,
-                              color: AppColors.primary,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              couponCode,
-                              style: TextStyle(
-                                fontSize: ScreenSize.textMedium,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (couponCode.isNotEmpty)
-                      SizedBox(height: ScreenSize.spacingSmall),
-                    
-                    // Product Name
-                    Text(
-                      productName,
-                      style: TextStyle(
-                        fontSize: ScreenSize.textMedium,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: ScreenSize.spacingSmall),
-                    
-                    // Valid Until Date
-                    if (validUntil != null)
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Discount Value - Big and Bold
                       Text(
-                        'Valid until ${_formatDate(validUntil)}',
-                        style: TextStyle(
-                          fontSize: ScreenSize.textSmall,
-                          color: AppColors.textSecondary,
+                        discountType == 'percentage' ? '${discount.toInt()}%' : '\$${discount.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    
-                    // Used Badge
-                    if (isUsed) ...[
-                      SizedBox(height: ScreenSize.spacingSmall),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ScreenSize.spacingSmall,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.error,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'USED',
-                          style: TextStyle(
-                            fontSize: ScreenSize.textExtraSmall,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textWhite,
-                          ),
+                      const SizedBox(height: 2),
+                      // OFF text
+                      const Text(
+                        'OFF',
+                        style: TextStyle(
+                          color: AppColors.textWhite,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1,
                         ),
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
+
+                // Dash separator
+                CustomPaint(
+                  size: const Size(1, 110),
+                  painter: DashedLinePainter(color: AppColors.border.withOpacity(0.5)),
+                ),
+
+                // Right Part - Content
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                productName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isUsed)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.textTertiary.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'USED',
+                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.textTertiary),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          description,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary.withOpacity(0.8),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const Spacer(),
+                        if (!eligible && !isUsed && disabledReason.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              disabledReason,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                              ),
+                              child: Text(
+                                couponCode,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            if (validUntil != null)
+                              Text(
+                                'Ends ${_formatShortDate(validUntil)}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.textTertiary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-        isUsed: isUsed,
-        onTap: isUsed
-            ? null
-            : () => _handleCouponTap(coupon, controller),
       ),
     );
   }
-  
-  /// Handle coupon tap - check minimum requirement and navigate
-  void _handleCouponTap(Map<String, dynamic> coupon, CouponController controller) {
-    // Get cart subtotal
-    double cartSubtotal = 0.0;
-    try {
-      if (Get.isRegistered<CartController>()) {
-        final cartController = Get.find<CartController>();
-        cartSubtotal = cartController.subtotal.value;
-      }
-    } catch (e) {
-      print('Error getting cart subtotal: $e');
+
+  void _handleDisabledCouponTap(
+    Map<String, dynamic> coupon,
+    double cartSubtotal,
+    bool cartHasItems,
+    String reason,
+  ) {
+    if (!cartHasItems || cartSubtotal <= 0) {
+      Get.snackbar(
+        'Cart empty',
+        'Add products to your cart to use coupons',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
     }
-    
-    // Get minimum amount requirement from coupon
-    // Check multiple possible field names
-    final minAmountValue = coupon['minimum_amount'] ?? 
-                          coupon['minimum_purchase'] ?? 
-                          coupon['min_amount'] ?? 
-                          coupon['min_purchase'] ?? 
-                          coupon['minimum_order_value'] ??
-                          0.0;
-    
-    final minAmount = minAmountValue is int 
-        ? minAmountValue.toDouble() 
-        : (minAmountValue is double ? minAmountValue : double.tryParse(minAmountValue.toString()) ?? 0.0);
-    
-    // Check if requirement is met
-    if (minAmount > 0 && cartSubtotal < minAmount) {
-      // Show popup with requirement message
-      _showRequirementDialog(minAmount, cartSubtotal);
-    } else {
-      // Requirement met or no requirement - proceed to checkout
-      controller.selectCoupon(coupon);
-      Get.toNamed(AppRoutes.checkout);
+    final min = CouponController.couponMinAmount(coupon);
+    if (min > 0 && cartSubtotal < min) {
+      _showRequirementDialog(min, cartSubtotal);
+    } else if (reason.isNotEmpty) {
+      Get.snackbar('Coupon unavailable', reason, snackPosition: SnackPosition.BOTTOM);
     }
   }
-  
+
+  /// Apply only when cart + minimum are satisfied, then checkout.
+  void _handleCouponTap(
+    Map<String, dynamic> coupon,
+    CouponController controller,
+    double cartSubtotal,
+  ) {
+    final cartHasItems = Get.isRegistered<CartController>() &&
+        Get.find<CartController>().cartItems.isNotEmpty;
+    if (!controller.isCouponEligible(
+      coupon,
+      cartSubtotal,
+      cartHasItems: cartHasItems,
+    )) {
+      _handleDisabledCouponTap(
+        coupon,
+        cartSubtotal,
+        cartHasItems,
+        controller.couponDisabledReason(
+          coupon,
+          cartSubtotal,
+          cartHasItems: cartHasItems,
+        ),
+      );
+      return;
+    }
+    controller.selectCoupon(coupon);
+    Get.toNamed(AppRoutes.checkout);
+  }
+
   /// Show popup dialog for minimum amount requirement
   void _showRequirementDialog(double requiredAmount, double currentAmount) {
     final remainingAmount = requiredAmount - currentAmount;
-    
+
     Get.dialog(
       Dialog(
         shape: RoundedRectangleBorder(
@@ -371,7 +420,7 @@ class CouponsScreen extends StatelessWidget {
                 ),
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingLarge : (ScreenSize.isSmallTablet ? ScreenSize.spacingMedium : ScreenSize.spacingMedium)),
-              
+
               // Title
               Text(
                 'Minimum Amount Required',
@@ -383,7 +432,7 @@ class CouponsScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingMedium : (ScreenSize.isSmallTablet ? ScreenSize.spacingSmall : ScreenSize.spacingSmall)),
-              
+
               // Message
               Text(
                 'This coupon requires a minimum purchase of',
@@ -394,7 +443,7 @@ class CouponsScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingSmall : (ScreenSize.isSmallTablet ? ScreenSize.spacingXSmall : ScreenSize.spacingXSmall)),
-              
+
               // Required Amount
               Text(
                 '\$${requiredAmount.toStringAsFixed(2)}',
@@ -405,7 +454,7 @@ class CouponsScreen extends StatelessWidget {
                 ),
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingMedium : (ScreenSize.isSmallTablet ? ScreenSize.spacingSmall : ScreenSize.spacingSmall)),
-              
+
               // Current Amount Info
               Container(
                 padding: EdgeInsets.all(ScreenSize.isLargeTablet ? ScreenSize.spacingMedium : (ScreenSize.isSmallTablet ? ScreenSize.spacingSmall : ScreenSize.spacingSmall)),
@@ -435,7 +484,7 @@ class CouponsScreen extends StatelessWidget {
                 ),
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingSmall : (ScreenSize.isSmallTablet ? ScreenSize.spacingXSmall : ScreenSize.spacingXSmall)),
-              
+
               // Remaining Amount
               Text(
                 'Add \$${remainingAmount.toStringAsFixed(2)} more to use this coupon',
@@ -447,7 +496,7 @@ class CouponsScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               SizedBox(height: ScreenSize.isLargeTablet ? ScreenSize.spacingLarge : (ScreenSize.isSmallTablet ? ScreenSize.spacingMedium : ScreenSize.spacingMedium)),
-              
+
               // Buttons
               Row(
                 children: [
@@ -474,7 +523,7 @@ class CouponsScreen extends StatelessWidget {
                     ),
                   ),
                   SizedBox(width: ScreenSize.isLargeTablet ? ScreenSize.spacingMedium : (ScreenSize.isSmallTablet ? ScreenSize.spacingSmall : ScreenSize.spacingSmall)),
-                  
+
                   // Shop Now Button
                   Expanded(
                     child: ElevatedButton(
@@ -510,187 +559,66 @@ class CouponsScreen extends StatelessWidget {
       barrierDismissible: true,
     );
   }
-  
-  Widget _buildTicketShape({
-    required Widget child,
-    required bool isUsed,
-    VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isUsed 
-              ? AppColors.backgroundGrey.withOpacity(0.5)
-              : AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(ScreenSize.isLargeTablet ? 16 : (ScreenSize.isSmallTablet ? 14 : 12)),
-          boxShadow: AppColors.cardShadow,
-        ),
-        child: Stack(
-          children: [
-            // Ticket shape with semicircular cutouts
-            ClipPath(
-              clipper: TicketClipper(),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isUsed 
-                      ? AppColors.backgroundGrey.withOpacity(0.5)
-                      : AppColors.cardBackground,
-                  borderRadius: BorderRadius.circular(ScreenSize.isLargeTablet ? 16 : (ScreenSize.isSmallTablet ? 14 : 12)),
-                ),
-                child: child,
-              ),
-            ),
-            
-            // Left top semicircle
-            Positioned(
-              left: -(ScreenSize.isLargeTablet ? 10.0 : (ScreenSize.isSmallTablet ? 9.0 : 7.5)),
-              top: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-              child: Container(
-                width: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                height: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                decoration: BoxDecoration(
-                  color: AppColors.background, // Match background
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            
-            // Right top semicircle
-            Positioned(
-              right: -(ScreenSize.isLargeTablet ? 10.0 : (ScreenSize.isSmallTablet ? 9.0 : 7.5)),
-              top: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-              child: Container(
-                width: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                height: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                decoration: BoxDecoration(
-                  color: AppColors.background, // Match background
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            
-            // Left bottom semicircle
-            Positioned(
-              left: -(ScreenSize.isLargeTablet ? 10.0 : (ScreenSize.isSmallTablet ? 9.0 : 7.5)),
-              bottom: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-              child: Container(
-                width: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                height: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                decoration: BoxDecoration(
-                  color: AppColors.background, // Match background
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            
-            // Right bottom semicircle
-            Positioned(
-              right: -(ScreenSize.isLargeTablet ? 10.0 : (ScreenSize.isSmallTablet ? 9.0 : 7.5)),
-              bottom: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-              child: Container(
-                width: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                height: ScreenSize.isLargeTablet ? 20.0 : (ScreenSize.isSmallTablet ? 18.0 : 15.0),
-                decoration: BoxDecoration(
-                  color: AppColors.background, // Match background
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            
-            // Used overlay
-            if (isUsed)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundGrey.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(ScreenSize.isLargeTablet ? 16 : (ScreenSize.isSmallTablet ? 14 : 12)),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-  
+
   String _formatDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
-      final months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                      'July', 'August', 'September', 'October', 'November', 'December'];
-      return '${date.day.toString().padLeft(2, '0')} ${months[date.month - 1]} ${date.year}';
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${date.day} ${months[date.month - 1]} ${date.year}';
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  String _formatShortDate(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      return '${date.day}/${date.month}/${date.year}';
     } catch (e) {
       return dateString;
     }
   }
 }
 
-/// Custom Clipper for ticket shape
-class TicketClipper extends CustomClipper<Path> {
+class CouponClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
-    final path = Path();
-    final radius = 12.0;
-    
-    // Top left corner
-    path.moveTo(radius, 0);
-    path.lineTo(size.width - radius, 0);
-    
-    // Top right corner
-    path.arcToPoint(
-      Offset(size.width, radius),
-      radius: Radius.circular(radius),
-    );
-    
-    // Right edge
-    path.lineTo(size.width, size.height - radius);
-    
-    // Bottom right corner
-    path.arcToPoint(
-      Offset(size.width - radius, size.height),
-      radius: Radius.circular(radius),
-    );
-    
-    // Bottom edge
-    path.lineTo(radius, size.height);
-    
-    // Bottom left corner
-    path.arcToPoint(
-      Offset(0, size.height - radius),
-      radius: Radius.circular(radius),
-    );
-    
-    // Left edge
-    path.lineTo(0, radius);
-    
-    // Top left corner
-    path.arcToPoint(
-      Offset(radius, 0),
-      radius: Radius.circular(radius),
-    );
-    
-    path.close();
-    return path;
+    // The entire card bounding box
+    Path rectPath = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+      
+    // The cutouts (semi-circles) to remove
+    const double radius = 10;
+    const double cutoutX = 85;
+
+    Path cutoutsPath = Path()
+      ..addOval(Rect.fromCircle(center: const Offset(cutoutX, 0), radius: radius))
+      ..addOval(Rect.fromCircle(center: Offset(cutoutX, size.height), radius: radius));
+      
+    // Subtract the cutouts from the rect to get the final shape
+    return Path.combine(PathOperation.difference, rectPath, cutoutsPath);
   }
-  
+
   @override
   bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
 
-/// Custom Painter for dashed line
 class DashedLinePainter extends CustomPainter {
+  final Color? color;
+  DashedLinePainter({this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.border
+      ..color = color ?? AppColors.border
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
-    
+
     const dashHeight = 5.0;
     const dashSpace = 3.0;
     double startY = 0;
-    
+
     while (startY < size.height) {
       canvas.drawLine(
         Offset(0, startY),
@@ -700,7 +628,7 @@ class DashedLinePainter extends CustomPainter {
       startY += dashHeight + dashSpace;
     }
   }
-  
+
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
