@@ -17,7 +17,6 @@ class StripeService {
   /// Call this in main.dart or app initialization
   static Future<void> initialize(String publishableKey) async {
     Stripe.publishableKey = publishableKey;
-    Stripe.merchantIdentifier = 'merchant.com.test'; // Test merchant ID for development
     await Stripe.instance.applySettings();
   }
   
@@ -237,11 +236,7 @@ class StripeService {
 
       debugPrint('[StripeService] About to call Stripe.instance.initPaymentSheet...');
       log('[StripeService] Calling Stripe.instance.initPaymentSheet...');
-      
-      // Set merchant identifier for Apple Pay
-      Stripe.merchantIdentifier = 'merchant.com.test';
-      await Stripe.instance.applySettings();
-      
+
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,

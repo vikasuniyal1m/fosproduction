@@ -158,7 +158,6 @@ class NewPasswordScreen extends StatelessWidget {
                     borderSide: const BorderSide(color: Color(0xFF0B5306), width: 2), // Green matching login/signup
                   ),
                 ),
-                readOnly: token != null && token!.isNotEmpty,
               )),
               
               // Token error
